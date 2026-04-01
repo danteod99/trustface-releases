@@ -1,7 +1,21 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
+const fs = require('fs');
 const { initDatabase, getDb } = require('./src/db/database');
+
+// Load .env file for secrets
+function loadEnv() {
+  try {
+    const envPath = path.join(__dirname, '.env');
+    const content = fs.readFileSync(envPath, 'utf-8');
+    for (const line of content.split('\n')) {
+      const [key, ...rest] = line.split('=');
+      if (key && rest.length) process.env[key.trim()] = rest.join('=').trim();
+    }
+  } catch { /* .env not found, use process.env */ }
+}
+loadEnv();
 const { launchBrowser, closeBrowser, getActiveBrowsers, onLoginSuccess, onLoginFail, setCapsolverKey, getCapsolverKey } = require('./src/browser/manager');
 const {
   autoLike, autoFollow, autoUnfollow, autoViewStories,
@@ -358,7 +372,7 @@ ipcMain.handle('auth:register', async (_, email, password) => {
   try {
     const { createClient } = require('@supabase/supabase-js');
     const SUPABASE_URL = 'https://jlxaubqvgjahcsnotvih.supabase.co';
-    const SERVICE_ROLE_KEY = 'REDACTED';
+    const SERVICE_ROLE_KEY = process.env.SERVICE_ROLE_KEY || '';
 
     // Use admin API to create user with auto-confirm
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
@@ -402,7 +416,7 @@ ipcMain.handle('auth:reset-password', async (_, email, newPassword) => {
       // Direct password reset via admin API (no email needed)
       const { createClient } = require('@supabase/supabase-js');
       const SUPABASE_URL = 'https://jlxaubqvgjahcsnotvih.supabase.co';
-      const SERVICE_ROLE_KEY = 'REDACTED';
+      const SERVICE_ROLE_KEY = process.env.SERVICE_ROLE_KEY || '';
       const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
         auth: { autoRefreshToken: false, persistSession: false },
       });
@@ -422,7 +436,7 @@ ipcMain.handle('auth:reset-password', async (_, email, newPassword) => {
       // Just verify the email exists
       const { createClient } = require('@supabase/supabase-js');
       const SUPABASE_URL = 'https://jlxaubqvgjahcsnotvih.supabase.co';
-      const SERVICE_ROLE_KEY = 'REDACTED';
+      const SERVICE_ROLE_KEY = process.env.SERVICE_ROLE_KEY || '';
       const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
         auth: { autoRefreshToken: false, persistSession: false },
       });
