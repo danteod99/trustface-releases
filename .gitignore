@@ -1,3 +1,5 @@
 node_modules/
 release/win-unpacked/
 release/mac-arm64/
+release/
+node_modules/

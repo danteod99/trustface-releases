@@ -1,6 +1,6 @@
 {
   "name": "trustface-desktop",
-  "version": "1.0.0",
+  "version": "1.3.0",
   "description": "TrustFace Desktop — Facebook Multi-Account Manager with Marketplace Automation",
   "main": "main.js",
   "scripts": {
@@ -30,6 +30,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.100.1",
     "better-sqlite3": "^11.9.1",
+    "electron-updater": "^6.8.3",
     "lucide-react": "^0.577.0",
     "node-machine-id": "^1.1.12",
     "playwright-core": "^1.52.0",
@@ -58,6 +59,11 @@
     "win": {
       "target": "nsis",
       "icon": "assets/icon.ico"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "danteod99",
+      "repo": "trustface-releases"
     }
   }
 }

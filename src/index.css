@@ -1,0 +1,365 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+  background: #0a0e1a;
+  color: #e2e8f0;
+}
+
+/* ─── Neo-Tactile Glassmorphism ─────────────────────────────────── */
+
+/* Cards, panels, containers — frosted glass effect */
+.bg-white {
+  background: rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+}
+
+/* Borders become subtle glass edges */
+.border-trust-border {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Surface backgrounds */
+.bg-trust-surface {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+.bg-trust-bg {
+  background: #0a0e1a !important;
+}
+
+/* ─── Text overrides for dark theme ─────────────────────────────── */
+
+.text-trust-dark {
+  color: #e2e8f0 !important;
+}
+
+.text-trust-muted {
+  color: #8892a4 !important;
+}
+
+/* ─── Accent buttons with glow ──────────────────────────────────── */
+
+.bg-trust-accent {
+  background: #4d7cff !important;
+  box-shadow: 0 0 16px rgba(77, 124, 255, 0.25), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.bg-trust-accent:hover,
+.hover\:bg-trust-accent-hover:hover {
+  background: #6b93ff !important;
+  box-shadow: 0 0 24px rgba(77, 124, 255, 0.35), 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* ─── Green, Red, Yellow with glow ──────────────────────────────── */
+
+.bg-trust-green {
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.2);
+}
+
+.bg-trust-red {
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.2);
+}
+
+/* ─── Input fields — dark glass ─────────────────────────────────── */
+
+input, select, textarea {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  color: #e2e8f0 !important;
+}
+
+input::placeholder, textarea::placeholder {
+  color: #4a5568 !important;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: rgba(77, 124, 255, 0.5) !important;
+  box-shadow: 0 0 0 2px rgba(77, 124, 255, 0.15), 0 0 12px rgba(77, 124, 255, 0.1) !important;
+}
+
+/* ─── Rounded cards — glass panels ──────────────────────────────── */
+
+.rounded-xl {
+  border-radius: 16px;
+}
+
+.shadow-trust {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4), 0 0 1px rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ─── Table & list items on dark ────────────────────────────────── */
+
+.divide-trust-border > * + * {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+.border-b.border-trust-border {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Hover states with glass lift */
+.hover\:bg-trust-surface\/50:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+tr:hover, .hover\:bg-trust-surface:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+/* ─── Status badges — glass pills ───────────────────────────────── */
+
+.bg-trust-green\/10 {
+  background: rgba(34, 197, 94, 0.12) !important;
+}
+
+.bg-trust-red\/10 {
+  background: rgba(239, 68, 68, 0.12) !important;
+}
+
+.bg-trust-yellow\/10 {
+  background: rgba(245, 158, 11, 0.12) !important;
+}
+
+.bg-trust-accent\/10,
+.bg-trust-accent\/5 {
+  background: rgba(77, 124, 255, 0.1) !important;
+}
+
+.bg-gray-100 {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ─── Sidebar — deep dark glass ─────────────────────────────────── */
+
+.bg-trust-dark {
+  background: #0d1224 !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Active tab in sidebar — cyan glow */
+.bg-trust-accent.text-white {
+  box-shadow: 0 0 16px rgba(77, 124, 255, 0.3), 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* Sidebar hover */
+.hover\:bg-white\/10:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* ─── Scrollbar — dark themed ───────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* ─── Animations ────────────────────────────────────────────────── */
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(77, 124, 255, 0.2); }
+  50% { box-shadow: 0 0 20px rgba(77, 124, 255, 0.4); }
+}
+
+.animate-glow {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* ─── Progress bars — neon glow ─────────────────────────────────── */
+
+.bg-trust-green.h-full {
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
+}
+
+.bg-trust-accent.h-full {
+  box-shadow: 0 0 8px rgba(77, 124, 255, 0.4);
+}
+
+/* ─── Modals & overlays ─────────────────────────────────────────── */
+
+.bg-\[\#2a2830\] {
+  background: rgba(13, 18, 36, 0.95) !important;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ─── Auth screens ──────────────────────────────────────────────── */
+
+.bg-\[\#1f1d24\] {
+  background: #0a0e1a !important;
+}
+
+/* ─── Payment/other dark cards ──────────────────────────────────── */
+
+.bg-\[\#1f1d24\],
+.bg-\[\#3a3840\] {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+.border-\[\#3a3840\] {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* ─── White/10 border overrides ─────────────────────────────────── */
+
+.border-white\/10 {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ─── Light color overrides for dark theme ──────────────────────── */
+
+.bg-red-50,
+.bg-red-50\/80,
+.bg-red-50\/60,
+.bg-red-50\/50 {
+  background: rgba(239, 68, 68, 0.1) !important;
+}
+
+.hover\:bg-red-100\/60:hover,
+.hover\:bg-red-100\/40:hover,
+.bg-red-100 {
+  background: rgba(239, 68, 68, 0.15) !important;
+}
+
+.border-red-300,
+.border-red-200 {
+  border-color: rgba(239, 68, 68, 0.25) !important;
+}
+
+.ring-red-200 {
+  --tw-ring-color: rgba(239, 68, 68, 0.2) !important;
+}
+
+.text-red-600,
+.text-red-500 {
+  color: #f87171 !important;
+}
+
+.bg-orange-50,
+.bg-orange-50\/60,
+.bg-orange-50\/50,
+.bg-orange-100 {
+  background: rgba(249, 115, 22, 0.1) !important;
+}
+
+.hover\:bg-orange-100\/40:hover {
+  background: rgba(249, 115, 22, 0.15) !important;
+}
+
+.border-orange-200 {
+  border-color: rgba(249, 115, 22, 0.25) !important;
+}
+
+.text-orange-600,
+.text-orange-500 {
+  color: #fb923c !important;
+}
+
+.bg-yellow-50,
+.bg-yellow-50\/60,
+.bg-yellow-50\/50,
+.bg-yellow-100 {
+  background: rgba(245, 158, 11, 0.1) !important;
+}
+
+.hover\:bg-yellow-100\/40:hover {
+  background: rgba(245, 158, 11, 0.15) !important;
+}
+
+.border-yellow-200 {
+  border-color: rgba(245, 158, 11, 0.25) !important;
+}
+
+.text-yellow-600 {
+  color: #fbbf24 !important;
+}
+
+.bg-purple-50,
+.bg-purple-50\/60,
+.bg-purple-50\/50,
+.bg-purple-100 {
+  background: rgba(147, 51, 234, 0.1) !important;
+}
+
+.hover\:bg-purple-100\/40:hover {
+  background: rgba(147, 51, 234, 0.15) !important;
+}
+
+.border-purple-200 {
+  border-color: rgba(147, 51, 234, 0.25) !important;
+}
+
+.text-purple-600 {
+  color: #a78bfa !important;
+}
+
+.bg-gray-50 {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+.bg-gray-200 {
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+
+.bg-gray-300 {
+  background: rgba(255, 255, 255, 0.15) !important;
+}
+
+.text-gray-500,
+.text-gray-400 {
+  color: #8892a4 !important;
+}
+
+.text-gray-300 {
+  color: #a0aec0 !important;
+}
+
+.text-gray-600 {
+  color: #6b7280 !important;
+}
+
+.hover\:bg-gray-100:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+.hover\:bg-red-50:hover {
+  background: rgba(239, 68, 68, 0.08) !important;
+}
+
+.bg-blue-600 {
+  background: #4d7cff !important;
+}
+
+.text-blue-400 {
+  color: #7b9bff !important;
+}
+
+/* ─── Option in select ──────────────────────────────────────────── */
+
+option {
+  background: #0d1224;
+  color: #e2e8f0;
+}

@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "TrustMind CapSolver",
+  "version": "1.0.0",
+  "description": "Auto CAPTCHA solver powered by CapSolver",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
