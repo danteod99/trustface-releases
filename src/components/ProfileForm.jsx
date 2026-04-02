@@ -61,7 +61,10 @@ export default function ProfileForm({ profile, onSave, onBulkSave, onCancel }) {
 
   const isEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
   const isPhone = (v) => /^\+?\d[\d\s\-()]{6,}$/.test(v);
-  const isTOTP = (v) => /^[A-Z2-7]{16,}$/i.test(v);
+  const isTOTP = (v) => {
+    const clean = v.replace(/\s/g, '');
+    return /^[A-Z2-7]{16,}$/i.test(clean);
+  };
 
   // Legacy stub - not used anymore but kept for compat
   const detectFieldType = (value) => {
@@ -106,7 +109,7 @@ export default function ProfileForm({ profile, onSave, onBulkSave, onCancel }) {
       // Remaining parts: detect by type
       for (let i = 2; i < parts.length; i++) {
         const p = parts[i];
-        if (isTOTP(p) && !account.twofa) account.twofa = p;
+        if (isTOTP(p) && !account.twofa) account.twofa = p.replace(/\s/g, '');
         else if (isEmail(p) && !account.email) account.email = p;
         else if (!account.emailPass) account.emailPass = p;
       }

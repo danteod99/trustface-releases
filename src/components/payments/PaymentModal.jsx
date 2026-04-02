@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 const plans = [
-  { id: 'monthly', name: 'Mensual', price: 29, period: '/mes', savings: null },
-  { id: 'quarterly', name: 'Trimestral', price: 79, period: '/3 meses', savings: 'Ahorra 9%' },
-  { id: 'yearly', name: 'Anual', price: 249, period: '/ano', savings: 'Ahorra 28%' },
+  { id: 'face-monthly', name: 'TrustFace Pro', price: 58, period: '/mes', savings: null, product: 'trustface', badge: 'Facebook' },
+  { id: 'face-quarterly', name: 'TrustFace Pro', price: 158, period: '/3 meses', savings: 'Ahorra 9%', product: 'trustface', badge: 'Facebook' },
+  { id: 'face-yearly', name: 'TrustFace Pro', price: 498, period: '/ano', savings: 'Ahorra 28%', product: 'trustface', badge: 'Facebook' },
+  { id: 'bundle-monthly', name: 'Trust Bundle', price: 100, period: '/mes', savings: 'Insta + Face', product: 'bundle', badge: 'Todo incluido', highlight: true },
+  { id: 'bundle-quarterly', name: 'Trust Bundle', price: 270, period: '/3 meses', savings: 'Ahorra 10%', product: 'bundle', badge: 'Todo incluido', highlight: true },
+  { id: 'bundle-yearly', name: 'Trust Bundle', price: 900, period: '/ano', savings: 'Ahorra 25%', product: 'bundle', badge: 'Todo incluido', highlight: true },
 ];
 
 const networks = [
@@ -15,6 +18,7 @@ const networks = [
 
 export default function PaymentModal({ onClose, onSuccess }) {
   const [step, setStep] = useState(1);
+  const [duration, setDuration] = useState('monthly');
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [selectedNetwork, setSelectedNetwork] = useState(null);
   const [paymentData, setPaymentData] = useState(null);
@@ -150,11 +154,28 @@ export default function PaymentModal({ onClose, onSuccess }) {
           {/* Step 1: Select Plan */}
           {step === 1 && (
             <div className="space-y-3">
-              {plans.map((plan) => (
+              {/* Duration selector */}
+              <div className="flex gap-2 mb-2">
+                {['monthly', 'quarterly', 'yearly'].map((dur) => (
+                  <button
+                    key={dur}
+                    onClick={() => setDuration(dur)}
+                    className={`flex-1 py-2 rounded-lg text-xs font-medium border transition-colors ${
+                      duration === dur ? 'border-trust-accent bg-trust-accent/10 text-trust-accent' : 'border-[#3a3840] text-gray-400'
+                    }`}
+                  >
+                    {dur === 'monthly' ? 'Mensual' : dur === 'quarterly' ? 'Trimestral' : 'Anual'}
+                  </button>
+                ))}
+              </div>
+
+              {plans.filter(p => p.id.includes(duration)).map((plan) => (
                 <button
                   key={plan.id}
                   onClick={() => setSelectedPlan(plan)}
                   className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${
+                    plan.highlight ? 'ring-1 ring-trust-yellow/30' : ''
+                  } ${
                     selectedPlan?.id === plan.id
                       ? 'border-trust-accent bg-trust-accent/10'
                       : 'border-[#3a3840] hover:border-gray-600'
@@ -163,8 +184,13 @@ export default function PaymentModal({ onClose, onSuccess }) {
                   <div className="text-left">
                     <div className="flex items-center gap-2">
                       <span className="text-white font-medium">{plan.name}</span>
+                      <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${
+                        plan.highlight ? 'bg-trust-yellow/20 text-trust-yellow' : 'bg-trust-accent/20 text-trust-accent'
+                      }`}>
+                        {plan.badge}
+                      </span>
                       {plan.savings && (
-                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-trust-green/20 text-trust-green">
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-trust-green/20 text-trust-green">
                           {plan.savings}
                         </span>
                       )}

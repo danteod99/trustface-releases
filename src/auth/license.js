@@ -33,34 +33,38 @@ async function getCurrentTier(supabase, userId) {
   try {
     const { data, error } = await supabase
       .from('tm_subscriptions')
-      .select('tier, expires_at')
+      .select('tier, product, expires_at')
       .eq('user_id', userId)
-      .eq('tier', 'pro')
-      .order('expires_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .in('tier', ['pro'])
+      .order('expires_at', { ascending: false });
 
     if (error) {
       console.error('[Licencia] Error al consultar suscripcion:', error.message);
       return _fallbackToFree(userId);
     }
 
-    if (!data) {
+    if (!data || data.length === 0) {
       console.log('[Licencia] No se encontro suscripcion activa. Tier: free');
       _updateCache(userId, 'free');
       return 'free';
     }
 
-    // Verificar si no ha expirado
     const now = new Date();
-    const expiresAt = new Date(data.expires_at);
-    if (expiresAt < now) {
-      console.log('[Licencia] La suscripcion ha expirado. Tier: free');
+    const APP_ID = 'trustface';
+    const validSub = data.find(sub => {
+      const expiresAt = new Date(sub.expires_at);
+      if (expiresAt < now) return false;
+      const product = (sub.product || '').toLowerCase();
+      return !product || product === APP_ID || product === 'bundle' || product === 'all';
+    });
+
+    if (!validSub) {
+      console.log('[Licencia] No hay suscripcion valida para esta app. Tier: free');
       _updateCache(userId, 'free');
       return 'free';
     }
 
-    const tier = data.tier === 'pro' ? 'pro' : 'free';
+    const tier = 'pro';
     console.log(`[Licencia] Tier obtenido desde Supabase: ${tier}`);
     _updateCache(userId, tier);
     return tier;

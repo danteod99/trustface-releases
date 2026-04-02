@@ -87,6 +87,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Auth
   login: (email, password) => ipcRenderer.invoke('auth:login', email, password),
+  loginWithGoogle: () => ipcRenderer.invoke('auth:google'),
   register: (email, password) => ipcRenderer.invoke('auth:register', email, password),
   resetPassword: (email, newPassword) => ipcRenderer.invoke('auth:reset-password', email, newPassword),
   logout: () => ipcRenderer.invoke('auth:logout'),
