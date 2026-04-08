@@ -144,7 +144,7 @@ export default function LoginScreen({ onLogin, onSwitchToRegister }) {
               }
             }}
             disabled={googleLoading}
-            className="w-full py-2.5 px-4 rounded-lg bg-white hover:bg-gray-100 text-gray-800 font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-3 border border-[#3a3840]"
+            className="w-full py-2.5 px-4 rounded-lg bg-white/10 hover:bg-white/15 text-white font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-3 border border-[#3a3840]"
           >
             {googleLoading ? (
               <svg className="animate-spin h-5 w-5 text-gray-600" fill="none" viewBox="0 0 24 24">
