@@ -81,53 +81,44 @@ export default function App() {
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} tabs={TABS} tier={tier} user={user} onLogout={handleLogout} onUpgrade={() => setShowPayment(true)} proTabs={PRO_TABS} />
       <main className="flex-1 overflow-y-auto p-6">
         <UpdateNotification />
-        {/* GenFarmer Banner */}
+        {/* Scaling LATAM Banner */}
         <a
           href="#"
-          onClick={(e) => { e.preventDefault(); window.api.openExternal?.('https://genfarmer.com/') || window.open('https://genfarmer.com/', '_blank'); }}
+          onClick={(e) => { e.preventDefault(); window.api.openExternal?.('https://www.scalinglatam.site/agendar'); }}
           className="block mb-5 rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-shadow cursor-pointer group"
         >
-          <div className="relative bg-gradient-to-r from-[#1a1f3c] via-[#2a3a6e] to-[#1a2955] px-8 py-5 flex items-center gap-6">
-            {/* Farm illustration */}
-            <div className="shrink-0 flex items-center gap-3">
-              <div className="flex flex-col items-center gap-1">
-                <div className="flex gap-1">
-                  <div className="w-8 h-12 bg-gradient-to-b from-gray-700 to-gray-900 rounded-md border border-gray-600 flex items-center justify-center">
-                    <div className="w-5 h-8 rounded-sm bg-gradient-to-b from-blue-400 to-blue-600 opacity-80"></div>
-                  </div>
-                  <div className="w-8 h-12 bg-gradient-to-b from-gray-700 to-gray-900 rounded-md border border-gray-600 flex items-center justify-center">
-                    <div className="w-5 h-8 rounded-sm bg-gradient-to-b from-green-400 to-green-600 opacity-80"></div>
-                  </div>
-                  <div className="w-8 h-12 bg-gradient-to-b from-gray-700 to-gray-900 rounded-md border border-gray-600 flex items-center justify-center">
-                    <div className="w-5 h-8 rounded-sm bg-gradient-to-b from-purple-400 to-purple-600 opacity-80"></div>
-                  </div>
-                  <div className="w-8 h-12 bg-gradient-to-b from-gray-700 to-gray-900 rounded-md border border-gray-600 flex items-center justify-center">
-                    <div className="w-5 h-8 rounded-sm bg-gradient-to-b from-pink-400 to-pink-600 opacity-80"></div>
-                  </div>
-                  <div className="w-8 h-12 bg-gradient-to-b from-gray-700 to-gray-900 rounded-md border border-gray-600 flex items-center justify-center">
-                    <div className="w-5 h-8 rounded-sm bg-gradient-to-b from-yellow-400 to-yellow-600 opacity-80"></div>
-                  </div>
+          <div className="relative bg-gradient-to-r from-[#0f0c29] via-[#302b63] to-[#24243e] px-8 py-5 flex items-center gap-6">
+            {/* Phone farm icon */}
+            <div className="shrink-0 flex items-center gap-1">
+              <div className="flex gap-0.5">
+                <div className="w-7 h-11 bg-gradient-to-b from-gray-700 to-gray-900 rounded-md border border-gray-600 flex items-center justify-center">
+                  <div className="w-4 h-7 rounded-sm bg-gradient-to-b from-green-400 to-green-600 opacity-80"></div>
                 </div>
-                <div className="w-full h-1.5 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-full opacity-60"></div>
+                <div className="w-7 h-11 bg-gradient-to-b from-gray-700 to-gray-900 rounded-md border border-gray-600 flex items-center justify-center">
+                  <div className="w-4 h-7 rounded-sm bg-gradient-to-b from-orange-400 to-orange-600 opacity-80"></div>
+                </div>
+                <div className="w-7 h-11 bg-gradient-to-b from-gray-700 to-gray-900 rounded-md border border-gray-600 flex items-center justify-center">
+                  <div className="w-4 h-7 rounded-sm bg-gradient-to-b from-pink-400 to-pink-600 opacity-80"></div>
+                </div>
               </div>
             </div>
             {/* Text */}
             <div className="flex-1">
-              <div className="text-[10px] font-bold text-blue-300 uppercase tracking-widest mb-1">GenFarmer Technologies</div>
+              <div className="text-[10px] font-bold text-orange-300 uppercase tracking-widest mb-1">Scaling LATAM</div>
               <h3 className="text-xl font-extrabold text-white leading-tight">
-                Compra tu Granja de Bots <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#52aff7] to-[#ffe787]">YA</span>
+                Arma tu Granja de Bots <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-pink-500">desde cero</span>
               </h3>
-              <p className="text-blue-200/70 text-xs mt-1">Box phones, cloud phones y software de automatizacion para escalar tus cuentas</p>
+              <p className="text-purple-200/70 text-xs mt-1">Te asesoramos gratis para montar tu bot farm y generar ingresos automatizados</p>
             </div>
             {/* CTA */}
             <div className="shrink-0">
-              <span className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[#52aff7] to-[#3b8dd4] text-white text-sm font-bold rounded-xl shadow-lg group-hover:from-[#ffe787] group-hover:to-[#f5c842] group-hover:text-gray-900 transition-all">
-                Ver Ofertas
+              <span className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-500 to-pink-600 text-white text-sm font-bold rounded-xl shadow-lg group-hover:from-yellow-400 group-hover:to-orange-500 group-hover:text-gray-900 transition-all">
+                Agendar Asesoria
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
               </span>
             </div>
             {/* Decorative glow */}
-            <div className="absolute top-0 right-0 w-64 h-full bg-gradient-to-l from-blue-500/10 to-transparent pointer-events-none"></div>
+            <div className="absolute top-0 right-0 w-64 h-full bg-gradient-to-l from-purple-500/10 to-transparent pointer-events-none"></div>
           </div>
         </a>
         {activeTab === 'dashboard' && <Dashboard />}
