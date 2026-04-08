@@ -1,31 +1,31 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
     <linearGradient id="bg2" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#0a0a1a"/>
-      <stop offset="100%" style="stop-color:#141428"/>
+      <stop offset="0%" style="stop-color:#0a0a2e"/>
+      <stop offset="100%" style="stop-color:#0d1b3e"/>
     </linearGradient>
     <linearGradient id="accent2" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#00d4aa"/>
-      <stop offset="100%" style="stop-color:#00a888"/>
+      <stop offset="0%" style="stop-color:#1877F2"/>
+      <stop offset="100%" style="stop-color:#0d5bc4"/>
     </linearGradient>
   </defs>
   <rect width="1024" height="1024" rx="200" fill="url(#bg2)"/>
   <rect x="40" y="40" width="944" height="944" rx="180" fill="none" stroke="url(#accent2)" stroke-width="8" opacity="0.3"/>
   <!-- Browser windows -->
-  <rect x="200" y="260" width="280" height="200" rx="12" fill="none" stroke="#00d4aa" stroke-width="8"/>
-  <rect x="200" y="260" width="280" height="36" rx="12" fill="#00d4aa" opacity="0.2"/>
+  <rect x="200" y="260" width="280" height="200" rx="12" fill="none" stroke="#1877F2" stroke-width="8"/>
+  <rect x="200" y="260" width="280" height="36" rx="12" fill="#1877F2" opacity="0.2"/>
   <circle cx="224" cy="278" r="6" fill="#ff4466"/>
   <circle cx="244" cy="278" r="6" fill="#ffaa00"/>
-  <circle cx="264" cy="278" r="6" fill="#00d4aa"/>
-  
-  <rect x="540" y="320" width="280" height="200" rx="12" fill="none" stroke="#00d4aa" stroke-width="8"/>
-  <rect x="540" y="320" width="280" height="36" rx="12" fill="#00d4aa" opacity="0.2"/>
+  <circle cx="264" cy="278" r="6" fill="#1877F2"/>
+
+  <rect x="540" y="320" width="280" height="200" rx="12" fill="none" stroke="#1877F2" stroke-width="8"/>
+  <rect x="540" y="320" width="280" height="36" rx="12" fill="#1877F2" opacity="0.2"/>
   <circle cx="564" cy="338" r="6" fill="#ff4466"/>
   <circle cx="584" cy="338" r="6" fill="#ffaa00"/>
-  <circle cx="604" cy="338" r="6" fill="#00d4aa"/>
-  
-  <!-- Shield / Mind -->
-  <path d="M512 580 L420 630 L420 720 Q420 800 512 840 Q604 800 604 720 L604 630 Z" fill="none" stroke="#00d4aa" stroke-width="10"/>
-  <path d="M512 620 L460 648 L460 712 Q460 770 512 800 Q564 770 564 712 L564 648 Z" fill="#00d4aa" opacity="0.15"/>
-  <text x="512" y="740" text-anchor="middle" fill="#00d4aa" font-family="Arial,Helvetica,sans-serif" font-weight="bold" font-size="80">TM</text>
+  <circle cx="604" cy="338" r="6" fill="#1877F2"/>
+
+  <!-- Shield / Face -->
+  <path d="M512 580 L420 630 L420 720 Q420 800 512 840 Q604 800 604 720 L604 630 Z" fill="none" stroke="#1877F2" stroke-width="10"/>
+  <path d="M512 620 L460 648 L460 712 Q460 770 512 800 Q564 770 564 712 L564 648 Z" fill="#1877F2" opacity="0.15"/>
+  <text x="512" y="740" text-anchor="middle" fill="#1877F2" font-family="Arial,Helvetica,sans-serif" font-weight="bold" font-size="80">TF</text>
 </svg>

@@ -6,17 +6,29 @@
 
 const crypto = require('crypto');
 
-// API key from environment variable (never hardcode)
-const API_KEY = process.env.NOWPAYMENTS_API_KEY || '';
+const API_KEY = process.env.NOWPAYMENTS_API_KEY || '0MA103D-8NF4VGJ-M2NE2FC-ZCF7E4X';
 const BASE_URL = 'https://api.nowpayments.io/v1';
 
 // Webhook IPN URL from environment
 const IPN_CALLBACK_URL = process.env.NOWPAYMENTS_IPN_URL || '';
 
 const PRICE_MAP = {
-  monthly: 29,
-  quarterly: 79,
-  yearly: 249,
+  // Legacy keys
+  monthly: 99,
+  quarterly: 229,
+  yearly: 599,
+  // TrustFace plans
+  'face-monthly': 99,
+  'face-quarterly': 229,
+  'face-yearly': 599,
+  // TrustInsta plans
+  'insta-monthly': 99,
+  'insta-quarterly': 229,
+  'insta-yearly': 599,
+  // Bundle plans
+  'bundle-monthly': 149,
+  'bundle-quarterly': 349,
+  'bundle-yearly': 899,
 };
 
 const CURRENCY_MAP = {
@@ -58,14 +70,14 @@ async function createPaymentOrder(userId, plan) {
     price_currency: 'usd',
     pay_currency: payCurrency,
     order_id: orderId,
-    order_description: `TrustMind Pro - ${duration}`,
-    ipn_callback_url: IPN_CALLBACK_URL,
+    order_description: `TrustFace Pro - ${duration}`,
   };
+  if (IPN_CALLBACK_URL) body.ipn_callback_url = IPN_CALLBACK_URL;
 
   try {
     console.log(`[NOWPayments] Creando orden de pago - Usuario: ${userId}, Plan: ${duration}, Red: ${network}`);
 
-    const response = await fetch(`${BASE_URL}/invoice`, {
+    const response = await fetch(`${BASE_URL}/payment`, {
       method: 'POST',
       headers: {
         'x-api-key': API_KEY,
@@ -81,16 +93,15 @@ async function createPaymentOrder(userId, plan) {
     }
 
     const data = await response.json();
-    console.log(`[NOWPayments] Orden creada exitosamente - ID: ${data.id}`);
+    console.log(`[NOWPayments] Pago creado exitosamente - ID: ${data.payment_id}, Address: ${data.pay_address}`);
 
     return {
       orderId,
-      paymentId: data.id,
+      paymentId: data.payment_id,
       payAddress: data.pay_address,
       payAmount: data.pay_amount,
       payCurrency: data.pay_currency,
       expiresAt: data.expiration_estimate_date,
-      invoiceUrl: data.invoice_url,
     };
   } catch (err) {
     console.log(`[NOWPayments] Error de conexion al crear orden: ${err.message}`);
@@ -167,26 +178,50 @@ function getPricingPlans() {
     {
       id: 'monthly',
       name: 'Mensual',
-      price: 29,
+      price: 99,
       period: '/mes',
       features: [...features],
     },
     {
       id: 'quarterly',
       name: 'Trimestral',
-      price: 79,
+      price: 229,
       period: '/3 meses',
-      savings: 'Ahorra $8',
+      savings: 'Ahorra 23%',
       features: [...features],
     },
     {
       id: 'yearly',
       name: 'Anual',
-      price: 249,
-      period: '/año',
-      savings: 'Ahorra $99',
-      popular: true,
+      price: 599,
+      period: '/ano',
+      savings: 'Ahorra 50%',
       features: [...features],
+    },
+    {
+      id: 'bundle-monthly',
+      name: 'Bundle Mensual',
+      price: 149,
+      period: '/mes',
+      savings: 'Insta + Face',
+      features: [...features, 'TrustInsta + TrustFace'],
+    },
+    {
+      id: 'bundle-quarterly',
+      name: 'Bundle Trimestral',
+      price: 349,
+      period: '/3 meses',
+      savings: 'Ahorra 22%',
+      popular: true,
+      features: [...features, 'TrustInsta + TrustFace'],
+    },
+    {
+      id: 'bundle-yearly',
+      name: 'Bundle Anual',
+      price: 899,
+      period: '/ano',
+      savings: 'Ahorra 50%',
+      features: [...features, 'TrustInsta + TrustFace'],
     },
   ];
 }

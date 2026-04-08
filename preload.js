@@ -1,6 +1,9 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
+  // External links
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+
   // Profiles
   listProfiles: () => ipcRenderer.invoke('profiles:list'),
   createProfile: (profile) => ipcRenderer.invoke('profiles:create', profile),
@@ -11,6 +14,7 @@ contextBridge.exposeInMainWorld('api', {
   launchBrowser: (profileId) => ipcRenderer.invoke('browser:launch', profileId),
   closeBrowser: (profileId) => ipcRenderer.invoke('browser:close', profileId),
   getBrowserStatus: () => ipcRenderer.invoke('browser:status'),
+  getBrowserLoginStatus: () => ipcRenderer.invoke('browser:login-status'),
 
   // Proxies
   importProxies: (text) => ipcRenderer.invoke('proxies:import', text),
@@ -118,7 +122,9 @@ contextBridge.exposeInMainWorld('api', {
   fbMarketplaceCreate: (profileId, listing) => ipcRenderer.invoke('fb:marketplace-create', profileId, listing),
   fbMarketplaceRepost: (profileId, url, data) => ipcRenderer.invoke('fb:marketplace-repost', profileId, url, data),
   fbMarketplaceScrape: (profileId, query, max) => ipcRenderer.invoke('fb:marketplace-scrape', profileId, query, max),
+  fbMarketplaceDeepScrape: (profileId, query, max) => ipcRenderer.invoke('fb:marketplace-deep-scrape', profileId, query, max),
   fbMarketplaceAutoreply: (profileId, template) => ipcRenderer.invoke('fb:marketplace-autoreply', profileId, template),
+  fbMarketplaceContact: (profileId, query, message, opts) => ipcRenderer.invoke('fb:marketplace-contact', profileId, query, message, opts),
   fbSendDM: (profileId, recipient, msg) => ipcRenderer.invoke('fb:send-dm', profileId, recipient, msg),
   fbMassDM: (profileId, recipients, templates, opts) => ipcRenderer.invoke('fb:mass-dm', profileId, recipients, templates, opts),
   fbCreatePost: (profileId, content, opts) => ipcRenderer.invoke('fb:create-post', profileId, content, opts),
@@ -142,6 +148,9 @@ contextBridge.exposeInMainWorld('api', {
 
   // AI Text Generation
   generateAIText: (provider, apiKey, prompt) => ipcRenderer.invoke('ai:generate-text', provider, apiKey, prompt),
+
+  // App info
+  getVersion: () => ipcRenderer.invoke('app:version'),
 
   // Auto-Updater
   checkForUpdate: () => ipcRenderer.invoke('updater:check'),

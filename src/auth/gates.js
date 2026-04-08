@@ -3,7 +3,7 @@
 // CommonJS - Node.js / Electron main process
 
 /** Limite de perfiles para el plan gratuito */
-const FREE_PROFILE_LIMIT = 50;
+const FREE_PROFILE_LIMIT = 5;
 
 /**
  * Mapa de funcionalidades y el tier minimo requerido.

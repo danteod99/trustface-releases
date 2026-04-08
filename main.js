@@ -1,8 +1,18 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const { initDatabase, getDb } = require('./src/db/database');
+
+// ─── Security: Anti-debugging & tamper detection ───────────────────
+if (app.isPackaged) {
+  // Disable DevTools in production
+  app.on('browser-window-created', (_, win) => {
+    win.webContents.on('devtools-opened', () => { win.webContents.closeDevTools(); });
+  });
+  // Prevent command line debugging flags
+  app.commandLine.appendSwitch('disable-features', 'DebugMode');
+}
 
 // Load .env file for secrets
 function loadEnv() {
@@ -249,17 +259,25 @@ app.whenReady().then(() => {
     }
   });
 
+  // App version
+  ipcMain.handle('app:version', () => app.getVersion());
+
   // Auto-Updater
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on('update-available', (info) => { if (mainWindow) mainWindow.webContents.send('updater:update-available', { version: info.version }); });
   autoUpdater.on('download-progress', (progress) => { if (mainWindow) mainWindow.webContents.send('updater:download-progress', { percent: progress.percent }); });
   autoUpdater.on('update-downloaded', (info) => { if (mainWindow) mainWindow.webContents.send('updater:update-downloaded', { version: info.version }); });
-  autoUpdater.on('error', (err) => { console.error('Updater error:', err.message); });
+  autoUpdater.on('error', (err) => { console.error('Updater error:', err.message); if (mainWindow) mainWindow.webContents.send('updater:error', { error: err.message }); });
   if (app.isPackaged) { setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 3000); }
   ipcMain.handle('updater:check', async () => { try { const r = await autoUpdater.checkForUpdates(); return { success: true, updateInfo: r?.updateInfo }; } catch (e) { return { success: false, error: e.message }; } });
   ipcMain.handle('updater:download', async () => { try { await autoUpdater.downloadUpdate(); return { success: true }; } catch (e) { return { success: false, error: e.message }; } });
-  ipcMain.handle('updater:install', () => { autoUpdater.quitAndInstall(false, true); });
+  ipcMain.handle('updater:install', () => {
+    app.removeAllListeners('window-all-closed');
+    const windows = BrowserWindow.getAllWindows();
+    windows.forEach((w) => w.destroy());
+    autoUpdater.quitAndInstall(false, true);
+  });
 
   // Start the background scheduler executor
   startSchedulerExecutor();
@@ -678,6 +696,10 @@ function decryptProfile(profile) {
   return dec;
 }
 
+ipcMain.handle('open-external', (_, url) => {
+  if (typeof url === 'string' && url.startsWith('https://')) shell.openExternal(url);
+});
+
 ipcMain.handle('profiles:list', () => {
   const db = getDb();
   return db.prepare('SELECT * FROM profiles ORDER BY created_at DESC').all().map(decryptProfile);
@@ -782,6 +804,27 @@ ipcMain.handle('browser:status', () => {
     running.push(id);
   }
   return running;
+});
+
+ipcMain.handle('browser:login-status', async () => {
+  const active = getActiveBrowsers();
+  const results = [];
+  for (const [id, entry] of active) {
+    try {
+      const page = entry.context?.pages()?.[0];
+      if (!page) { results.push({ id, loggedIn: false }); continue; }
+      const url = page.url();
+      const isLoggedIn = url.includes('facebook.com') &&
+        !url.includes('/login') &&
+        !url.includes('checkpoint') &&
+        !url.includes('two_factor') &&
+        !url.includes('two_step');
+      results.push({ id, loggedIn: isLoggedIn });
+    } catch {
+      results.push({ id, loggedIn: false });
+    }
+  }
+  return results;
 });
 
 // ─── IPC: Proxy Import ─────────────────────────────────────────────
@@ -1443,142 +1486,192 @@ const fb = require('./src/browser/facebook-automations');
 
 ipcMain.handle('fb:marketplace-create', async (_, profileId, listing) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
-    return await fb.marketplaceCreateListing(browser.page, listing);
+    const entry = getActiveBrowsers().get(profileId);
+    if (!entry?.context) return { error: 'Browser not running' };
+    const page = entry.context.pages()[0];
+    if (!page) return { error: 'No page available' };
+    return await fb.marketplaceCreateListing(page, listing);
   } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('fb:marketplace-repost', async (_, profileId, listingUrl, listingData) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
-    return await fb.marketplaceRepost(browser.page, listingUrl, listingData);
+    const entry = getActiveBrowsers().get(profileId);
+    if (!entry?.context) return { error: 'Browser not running' };
+    const page = entry.context.pages()[0];
+    if (!page) return { error: 'No page available' };
+    return await fb.marketplaceRepost(page, listingUrl, listingData);
   } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('fb:marketplace-scrape', async (_, profileId, query, maxResults) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
-    return await fb.scrapeMarketplace(browser.page, query, maxResults);
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
+    return await fb.scrapeMarketplace(_page, query, maxResults);
+  } catch (err) { return { error: err.message }; }
+});
+
+ipcMain.handle('fb:marketplace-deep-scrape', async (_, profileId, query, maxResults) => {
+  try {
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
+    return await fb.deepScrapeMarketplace(_page, query, maxResults);
   } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('fb:marketplace-autoreply', async (_, profileId, template) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
-    return await fb.autoReplyMarketplace(browser.page, template);
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
+    return await fb.autoReplyMarketplace(_page, template);
+  } catch (err) { return { error: err.message }; }
+});
+
+ipcMain.handle('fb:marketplace-contact', async (_, profileId, query, message, options) => {
+  try {
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
+    return await fb.contactMarketplaceSellers(_page, query, message, options);
   } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('fb:send-dm', async (_, profileId, recipient, message) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
-    return await fb.sendMessage(browser.page, recipient, message);
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
+    return await fb.sendMessage(_page, recipient, message);
   } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('fb:mass-dm', async (_, profileId, recipients, templates, options) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
-    return await fb.sendMassDM(browser.page, recipients, templates, options);
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
+    return await fb.sendMassDM(_page, recipients, templates, options);
   } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('fb:create-post', async (_, profileId, content, options) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
-    return await fb.createPost(browser.page, content, options);
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
+    return await fb.createPost(_page, content, options);
   } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('fb:post-group', async (_, profileId, groupUrl, content) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
-    return await fb.postToGroup(browser.page, groupUrl, content);
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
+    return await fb.postToGroup(_page, groupUrl, content);
   } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('fb:like', async (_, profileId, targetUrl, maxLikes) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
-    return await fb.likePosts(browser.page, targetUrl, maxLikes);
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
+    return await fb.likePosts(_page, targetUrl, maxLikes);
   } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('fb:comment', async (_, profileId, targetUrl, comments, maxComments) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
-    return await fb.commentOnPosts(browser.page, targetUrl, comments, maxComments);
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
+    return await fb.commentOnPosts(_page, targetUrl, comments, maxComments);
   } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('fb:share', async (_, profileId, postUrl) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
-    return await fb.sharePost(browser.page, postUrl);
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
+    return await fb.sharePost(_page, postUrl);
   } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('fb:join-group', async (_, profileId, groupUrl) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
-    return await fb.joinGroup(browser.page, groupUrl);
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
+    return await fb.joinGroup(_page, groupUrl);
   } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('fb:add-friends', async (_, profileId, profileUrls, maxRequests) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
-    return await fb.addFriends(browser.page, profileUrls, maxRequests);
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
+    return await fb.addFriends(_page, profileUrls, maxRequests);
   } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('fb:scrape-group', async (_, profileId, groupUrl, maxMembers) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
-    return await fb.scrapeGroupMembers(browser.page, groupUrl, maxMembers);
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
+    return await fb.scrapeGroupMembers(_page, groupUrl, maxMembers);
   } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('fb:warmup', async (_, profileId, options) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
-    return await fb.warmupAccount(browser.page, options);
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
+    return await fb.warmupAccount(_page, options);
   } catch (err) { return { error: err.message }; }
 });
 
 // ─── AI Text Generation ─────────────────────────────────────────────
 ipcMain.handle('ai:generate-text', async (_, provider, apiKey, prompt) => {
   const https = require('https');
+
+  // Use provided key, or fallback to env var, or settings
+  let resolvedKey = apiKey;
+  if (!resolvedKey) {
+    try {
+      const db = getDb();
+      const row = db.prepare("SELECT value FROM settings WHERE key = 'ai_api_key'").get();
+      if (row) resolvedKey = row.value;
+    } catch {}
+  }
+  if (!resolvedKey) resolvedKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || '';
+
+  if (!resolvedKey) {
+    return { error: 'No hay API key configurado. Ve a Configuracion para agregar tu API key de Anthropic o OpenAI.' };
+  }
 
   return new Promise((resolve) => {
     let url, headers, body;
@@ -1587,7 +1680,7 @@ ipcMain.handle('ai:generate-text', async (_, provider, apiKey, prompt) => {
       url = 'https://api.anthropic.com/v1/messages';
       headers = {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
+        'x-api-key': resolvedKey,
         'anthropic-version': '2023-06-01',
       };
       body = JSON.stringify({
@@ -1649,72 +1742,79 @@ ipcMain.handle('ai:generate-text', async (_, provider, apiKey, prompt) => {
 
 ipcMain.handle('fb:scrape-page-info', async (_, profileId, pageUrl) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
     const fb = require('./src/browser/automations');
-    return await fb.scrapePageInfo(browser.page, pageUrl);
+    return await fb.scrapePageInfo(_page, pageUrl);
   } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('fb:scrape-page-followers', async (_, profileId, pageUrl, maxFollowers) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
     const fb = require('./src/browser/automations');
-    return await fb.scrapePageFollowers(browser.page, pageUrl, maxFollowers);
+    return await fb.scrapePageFollowers(_page, pageUrl, maxFollowers);
   } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('fb:post-to-page', async (_, profileId, pageUrl, content) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
     const fb = require('./src/browser/automations');
-    return await fb.postToPage(browser.page, pageUrl, content);
+    return await fb.postToPage(_page, pageUrl, content);
   } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('fb:invite-to-page', async (_, profileId, pageUrl, maxInvites) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
     const fb = require('./src/browser/automations');
-    return await fb.inviteToPage(browser.page, pageUrl, maxInvites);
+    return await fb.inviteToPage(_page, pageUrl, maxInvites);
   } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('fb:scrape-page-reviews', async (_, profileId, pageUrl, maxReviews) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
     const fb = require('./src/browser/automations');
-    return await fb.scrapePageReviews(browser.page, pageUrl, maxReviews);
+    return await fb.scrapePageReviews(_page, pageUrl, maxReviews);
   } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('fb:search-pages', async (_, profileId, keyword, maxResults) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
     const fb = require('./src/browser/automations');
-    return await fb.searchPages(browser.page, keyword, maxResults);
+    return await fb.searchPages(_page, keyword, maxResults);
   } catch (err) { return { error: err.message }; }
 });
 
 // ─── IPC: Generic Run Automation (for ProfileList context menu) ───
 ipcMain.handle('fb:run-automation', async (_, profileId, actionId, config) => {
   try {
-    const browsers = getActiveBrowsers();
-    const browser = browsers[profileId];
-    if (!browser?.page) return { error: 'Browser not running' };
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
     const fb = require('./src/browser/automations');
-    const page = browser.context?.pages()?.[0] || browser.page;
+    const page = _page;
     switch (actionId) {
       case 'mp-create': return await fb.marketplaceCreateListing(page, config);
       case 'like': return await fb.likePosts(page, config.likeTargetUrl || 'https://facebook.com', config.maxLikes || 10);

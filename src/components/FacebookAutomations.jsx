@@ -9,6 +9,7 @@ const FB_ACTIONS = [
   { id: 'mp-repost', name: 'Repostear Listings', icon: '🔄', color: 'text-blue-400', category: 'Marketplace', desc: 'Eliminar y volver a publicar para aparecer primero' },
   { id: 'mp-scrape', name: 'Scrape Marketplace', icon: '🔍', color: 'text-cyan-500', category: 'Marketplace', desc: 'Extraer listings por keyword (precios, titulos)' },
   { id: 'mp-autoreply', name: 'Auto-Responder Marketplace', icon: '💬', color: 'text-green-500', category: 'Marketplace', desc: 'Responder automaticamente a mensajes de compradores' },
+  { id: 'mp-contact', name: 'Contactar Vendedores', icon: '📩', color: 'text-emerald-500', category: 'Marketplace', desc: 'Enviar "Sigue disponible?" y mensaje a listings de Marketplace' },
 
   // Messenger / DMs
   { id: 'dm-send', name: 'Enviar DM', icon: '✉️', color: 'text-purple-500', category: 'Messenger', desc: 'Enviar mensaje directo a un usuario' },
@@ -38,12 +39,26 @@ const FB_ACTIONS = [
 const ACTION_FIELDS = {
   'mp-create': [
     { key: 'mpTitle', label: 'Titulo del Listing', type: 'text', placeholder: 'iPhone 15 Pro Max 256GB' },
-    { key: 'mpPrice', label: 'Precio (USD)', type: 'number', placeholder: '999', min: 0, max: 999999 },
+    { key: 'mpCurrency', label: 'Divisa', type: 'select', options: [
+      { value: 'USD', label: 'USD ($) — Dolar estadounidense' },
+      { value: 'EUR', label: 'EUR (€) — Euro' },
+      { value: 'GBP', label: 'GBP (£) — Libra esterlina' },
+      { value: 'MXN', label: 'MXN ($) — Peso mexicano' },
+      { value: 'PEN', label: 'PEN (S/) — Sol peruano' },
+      { value: 'ARS', label: 'ARS ($) — Peso argentino' },
+      { value: 'COP', label: 'COP ($) — Peso colombiano' },
+      { value: 'CLP', label: 'CLP ($) — Peso chileno' },
+      { value: 'BRL', label: 'BRL (R$) — Real brasileño' },
+      { value: 'DOP', label: 'DOP (RD$) — Peso dominicano' },
+      { value: 'CAD', label: 'CAD ($) — Dolar canadiense' },
+      { value: 'AUD', label: 'AUD ($) — Dolar australiano' },
+    ], default: 'USD' },
+    { key: 'mpPrice', label: 'Precio', type: 'number', placeholder: '999', min: 0, max: 999999 },
     { key: 'mpDescription', label: 'Descripcion', type: 'textarea', placeholder: 'Producto en excelente estado...', rows: 3 },
     { key: 'mpCategory', label: 'Categoria', type: 'select', options: [{ value: 'Electronica', label: 'Electronica' }, { value: 'Vehiculos', label: 'Vehiculos' }, { value: 'Hogar', label: 'Hogar' }, { value: 'Ropa', label: 'Ropa' }, { value: 'Deportes', label: 'Deportes' }, { value: 'Juguetes', label: 'Juguetes' }, { value: 'Otra', label: 'Otra' }], default: 'Electronica' },
     { key: 'mpCondition', label: 'Estado', type: 'select', options: [{ value: 'Nuevo', label: 'Nuevo' }, { value: 'Como nuevo', label: 'Como nuevo' }, { value: 'Buen estado', label: 'Buen estado' }, { value: 'Aceptable', label: 'Aceptable' }], default: 'Nuevo' },
     { key: 'mpLocation', label: 'Ubicacion', type: 'text', placeholder: 'Lima, Peru' },
-    { key: 'mpPhotos', label: 'Fotos (rutas separadas por coma)', type: 'textarea', placeholder: '/ruta/foto1.jpg, /ruta/foto2.jpg', rows: 2 },
+    { key: 'mpPhotos', label: 'Fotos (carpeta o rutas separadas por coma)', type: 'textarea', placeholder: '/Users/tu/carpeta-fotos o /ruta/foto1.jpg, /ruta/foto2.jpg', rows: 2 },
   ],
   'mp-repost': [
     { key: 'mpListingUrl', label: 'URL del Listing', type: 'text', placeholder: 'https://facebook.com/marketplace/item/...' },
@@ -58,6 +73,13 @@ const ACTION_FIELDS = {
     { key: 'mpReplyTemplate', label: 'Template de Respuesta', type: 'textarea', placeholder: 'Hola! Si, esta disponible. El precio es $X. Te interesa?', rows: 3 },
     { key: 'delayMin', label: 'Delay minimo (seg)', type: 'number', min: 1, max: 120, default: 10 },
     { key: 'delayMax', label: 'Delay maximo (seg)', type: 'number', min: 1, max: 120, default: 30 },
+  ],
+  'mp-contact': [
+    { key: 'mpContactQuery', label: 'Buscar en Marketplace', type: 'text', placeholder: 'iPhone, laptop, auto...' },
+    { key: 'mpContactMessage', label: 'Mensaje personalizado (vacio = "Sigue disponible?")', type: 'textarea', placeholder: 'Hola! Me interesa tu producto. Sigue disponible? Cual es tu mejor precio?', rows: 3 },
+    { key: 'mpMaxContacts', label: 'Max contactos', type: 'number', placeholder: '10', min: 1, max: 100, default: 10 },
+    { key: 'delayMin', label: 'Delay minimo (seg)', type: 'number', min: 5, max: 300, default: 15 },
+    { key: 'delayMax', label: 'Delay maximo (seg)', type: 'number', min: 5, max: 300, default: 45 },
   ],
   'dm-send': [
     { key: 'dmRecipient', label: 'Destinatario (nombre o perfil)', type: 'text', placeholder: 'Juan Perez' },
@@ -191,6 +213,7 @@ async function executeAction(profileId, actionId, rawConfig) {
     case 'mp-repost': return window.api.fbMarketplaceRepost(profileId, c.mpListingUrl, c);
     case 'mp-scrape': return window.api.fbMarketplaceScrape(profileId, c.mpSearchQuery, c.mpMaxResults);
     case 'mp-autoreply': return window.api.fbMarketplaceAutoreply(profileId, c.mpReplyTemplate);
+    case 'mp-contact': return window.api.fbMarketplaceContact(profileId, c.mpContactQuery, c.mpContactMessage, { maxContacts: c.mpMaxContacts || 10, minDelay: (c.delayMin || 15) * 1000, maxDelay: (c.delayMax || 45) * 1000 });
     case 'dm-send': return window.api.fbSendDM(profileId, c.dmRecipient, c.dmMessage);
     case 'dm-mass': return window.api.fbMassDM(profileId, c.dmRecipients, c.dmTemplates, { minDelay: c.dmMinDelay, maxDelay: c.dmMaxDelay });
     case 'post-create': return window.api.fbCreatePost(profileId, c.postText, { photos: c.postPhotos, pageUrl: c.postPageUrl });
@@ -368,24 +391,109 @@ export default function FacebookAutomations({ tier, onUpgrade }) {
     } catch {}
   };
 
-  const activeProfiles = profiles.filter((p) => runningIds.includes(p.id));
+  // Show ALL profiles with credentials — auto-launch when executing
+  const allProfiles = profiles.filter((p) => p.fb_user);
+  const activeProfiles = allProfiles; // Keep name for UI compatibility
 
   const toggleProfile = (id) => {
     setSelectedProfiles((prev) => prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]);
   };
-  const selectAll = () => setSelectedProfiles(activeProfiles.map((p) => p.id));
+  const selectAll = () => setSelectedProfiles(allProfiles.map((p) => p.id));
+
+  /** Auto-open browsers and wait for login/2FA to complete */
+  const ensureBrowsersOpen = async (profileIds) => {
+    const launchedIds = [];
+    for (const pid of profileIds) {
+      const pName = profiles.find(p => p.id === pid)?.name || pid;
+      try {
+        addLog(`Abriendo navegador para ${pName}...`, 'info');
+        await window.api.launchBrowser(pid);
+        launchedIds.push(pid);
+      } catch (err) {
+        if (err?.message?.includes('ya tiene') || err?.message?.includes('already')) {
+          launchedIds.push(pid);
+        } else {
+          addLog(`Error abriendo ${pName}: ${err.message}`, 'error');
+        }
+      }
+    }
+    if (launchedIds.length === 0) return [];
+
+    addLog(`Esperando login/2FA de ${launchedIds.length} perfil(es)...`, 'info');
+    const readyIds = [];
+    const failedIds = [];
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < 90000) {
+      await new Promise(r => setTimeout(r, 5000));
+      const loginStatus = await window.api.getBrowserLoginStatus().catch(() => []);
+      const activeBrowsers = await window.api.getBrowserStatus().catch(() => []);
+
+      for (const pid of launchedIds) {
+        if (readyIds.includes(pid) || failedIds.includes(pid)) continue;
+        const pName = profiles.find(p => p.id === pid)?.name || pid;
+        const status = loginStatus.find(s => s.id === pid);
+        const isActive = activeBrowsers.includes(pid);
+
+        if (status?.loggedIn) {
+          readyIds.push(pid);
+          addLog(`${pName}: logueado y listo`, 'done');
+        } else if (!isActive) {
+          failedIds.push(pid);
+          addLog(`${pName}: fallo login`, 'error');
+        }
+      }
+      if (readyIds.length + failedIds.length >= launchedIds.length) break;
+    }
+
+    const finalStatus = await window.api.getBrowserLoginStatus().catch(() => []);
+    for (const pid of launchedIds) {
+      if (!readyIds.includes(pid) && !failedIds.includes(pid)) {
+        const s = finalStatus.find(x => x.id === pid);
+        if (s?.loggedIn) readyIds.push(pid);
+      }
+    }
+
+    await loadData();
+    addLog(`${readyIds.length} de ${launchedIds.length} perfil(es) listos`, readyIds.length > 0 ? 'done' : 'error');
+    return readyIds;
+  };
 
   // ---- Simple mode execution ----
   const handleRunSimple = async () => {
     if (!selectedAction || selectedProfiles.length === 0) return;
     setRunning(true);
     cancelledRef.current = false;
-    addLog(`Ejecutando ${selectedAction.name} en ${selectedProfiles.length} perfil(es)...`, 'start');
 
-    for (const pid of selectedProfiles) {
+    // Auto-open browsers
+    const readyIds = await ensureBrowsersOpen(selectedProfiles);
+    if (readyIds.length === 0) { setRunning(false); addLog('No se pudieron abrir navegadores', 'error'); return; }
+
+    addLog(`Ejecutando ${selectedAction.name} en ${readyIds.length} perfil(es)...`, 'start');
+
+    for (const pid of readyIds) {
       if (cancelledRef.current) break;
       try {
-        await executeAction(pid, selectedAction.id, config);
+        const result = await executeAction(pid, selectedAction.id, config);
+        if (result?.error) {
+          addLog(`Error: ${result.error}`, 'error');
+        } else if (Array.isArray(result) && result.length > 0) {
+          // Scrape results — show count and details
+          addLog(`Extraidos ${result.length} resultados:`, 'done');
+          result.forEach((item, i) => {
+            const title = item.title || item.name || '';
+            const price = item.price || '';
+            const href = item.href || '';
+            addLog(`  ${i + 1}. ${title} ${price ? '— ' + price : ''} ${href ? '(' + href.substring(0, 60) + '...)' : ''}`, 'info');
+          });
+        } else if (result && typeof result === 'object') {
+          // Single result with stats (e.g. contacted, liked, etc.)
+          const stats = Object.entries(result)
+            .filter(([k, v]) => typeof v === 'number' || typeof v === 'boolean')
+            .map(([k, v]) => `${k}: ${v}`)
+            .join(', ');
+          if (stats) addLog(`Resultado: ${stats}`, 'done');
+        }
       } catch (err) {
         addLog(`Error: ${err?.message || err}`, 'error');
       }
@@ -538,42 +646,22 @@ export default function FacebookAutomations({ tier, onUpgrade }) {
         {/* ================================================================ */}
         {/* LEFT SIDEBAR - Profile selector                                  */}
         {/* ================================================================ */}
-        <div className="w-64 flex flex-col shrink-0">
-          <div className="bg-white border border-trust-border rounded-xl p-4 shadow-trust">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-trust-dark">Perfiles Activos</h3>
-              {activeProfiles.length > 0 && (
-                <button onClick={selectAll} className="text-xs text-trust-accent font-medium hover:text-trust-accent-hover">Todos</button>
-              )}
-            </div>
-            {activeProfiles.length === 0 ? (
-              <p className="text-xs text-trust-muted py-4 text-center">Abre navegadores primero</p>
-            ) : (
-              <div className="space-y-1.5 max-h-[calc(100vh-280px)] overflow-y-auto">
-                {activeProfiles.map((p) => (
-                  <label
-                    key={p.id}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-all ${
-                      selectedProfiles.includes(p.id)
-                        ? 'bg-trust-accent/5 border border-trust-accent/30 shadow-sm'
-                        : 'hover:bg-trust-surface border border-transparent'
-                    }`}
-                  >
-                    <input type="checkbox" checked={selectedProfiles.includes(p.id)} onChange={() => toggleProfile(p.id)} className="accent-trust-accent w-4 h-4" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm text-trust-dark font-medium truncate">{p.name}</div>
-                      {p.fb_user && <div className="text-xs text-trust-muted">@{p.fb_user}</div>}
-                    </div>
-                  </label>
-                ))}
-              </div>
-            )}
-            {selectedProfiles.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-trust-border">
-                <span className="text-xs text-trust-muted">{selectedProfiles.length} perfil{selectedProfiles.length !== 1 ? 'es' : ''} seleccionado{selectedProfiles.length !== 1 ? 's' : ''}</span>
-              </div>
-            )}
+        <div className="w-44 flex-shrink-0 bg-white rounded-xl border border-trust-border p-3 overflow-y-auto">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-semibold text-trust-dark">Perfiles activos</h3>
+            <button onClick={selectAll} className="text-[10px] text-blue-500 hover:underline">Todos</button>
           </div>
+          {allProfiles.length === 0 && <p className="text-[10px] text-trust-muted">No hay perfiles con credenciales</p>}
+          {allProfiles.map(p => {
+            const isActive = runningIds.includes(p.id);
+            const isSelected = selectedProfiles.includes(p.id);
+            return (
+              <button key={p.id} onClick={() => toggleProfile(p.id)}
+                className={`w-full text-left px-2 py-1.5 rounded-lg text-xs mb-0.5 truncate ${isSelected ? 'bg-blue-500/10 text-blue-600 font-medium' : 'text-trust-muted hover:bg-trust-surface'}`}>
+                {isSelected ? '✓ ' : ''}<span className={`inline-block w-1.5 h-1.5 rounded-full mr-1 ${isActive ? 'bg-green-500' : 'bg-gray-400'}`}></span>{p.name}
+              </button>
+            );
+          })}
         </div>
 
         {/* ================================================================ */}

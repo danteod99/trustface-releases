@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 const plans = [
-  { id: 'face-monthly', name: 'TrustFace Pro', price: 58, period: '/mes', savings: null, product: 'trustface', badge: 'Facebook' },
-  { id: 'face-quarterly', name: 'TrustFace Pro', price: 158, period: '/3 meses', savings: 'Ahorra 9%', product: 'trustface', badge: 'Facebook' },
-  { id: 'face-yearly', name: 'TrustFace Pro', price: 498, period: '/ano', savings: 'Ahorra 28%', product: 'trustface', badge: 'Facebook' },
-  { id: 'bundle-monthly', name: 'Trust Bundle', price: 100, period: '/mes', savings: 'Insta + Face', product: 'bundle', badge: 'Todo incluido', highlight: true },
-  { id: 'bundle-quarterly', name: 'Trust Bundle', price: 270, period: '/3 meses', savings: 'Ahorra 10%', product: 'bundle', badge: 'Todo incluido', highlight: true },
-  { id: 'bundle-yearly', name: 'Trust Bundle', price: 900, period: '/ano', savings: 'Ahorra 25%', product: 'bundle', badge: 'Todo incluido', highlight: true },
+  { id: 'face-monthly', name: 'TrustFace Pro', price: 99, period: '/mes', savings: null, product: 'trustface', badge: 'Facebook' },
+  { id: 'face-quarterly', name: 'TrustFace Pro', price: 229, period: '/3 meses', savings: 'Ahorra 23%', product: 'trustface', badge: 'Facebook' },
+  { id: 'face-yearly', name: 'TrustFace Pro', price: 599, period: '/ano', savings: 'Ahorra 50%', product: 'trustface', badge: 'Facebook' },
+  { id: 'bundle-monthly', name: 'Trust Bundle', price: 149, period: '/mes', savings: 'Insta + Face', product: 'bundle', badge: 'Todo incluido', highlight: true },
+  { id: 'bundle-quarterly', name: 'Trust Bundle', price: 349, period: '/3 meses', savings: 'Ahorra 22%', product: 'bundle', badge: 'Todo incluido', highlight: true },
+  { id: 'bundle-yearly', name: 'Trust Bundle', price: 899, period: '/ano', savings: 'Ahorra 50%', product: 'bundle', badge: 'Todo incluido', highlight: true },
 ];
 
 const networks = [
@@ -300,20 +300,34 @@ export default function PaymentModal({ onClose, onSuccess }) {
                     ${paymentData?.amount || selectedPlan?.price} <span className="text-lg text-gray-500">USDT</span>
                   </div>
 
-                  {/* QR Placeholder */}
-                  <div className="inline-flex items-center justify-center w-40 h-40 rounded-xl bg-white mb-4">
-                    <div className="w-32 h-32 bg-gray-200 rounded-lg flex items-center justify-center text-gray-400 text-xs">
-                      QR Code
+                  {/* QR Code */}
+                  {paymentData?.payAddress && (
+                    <div className="inline-flex items-center justify-center w-40 h-40 rounded-xl bg-white mb-4 p-2">
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(paymentData.payAddress)}`}
+                        alt="QR Code"
+                        className="w-full h-full"
+                      />
                     </div>
-                  </div>
+                  )}
 
                   {/* Address */}
                   <div className="bg-[#1f1d24] rounded-lg p-3 mb-4">
                     <p className="text-xs text-gray-500 mb-1">Direccion de pago ({selectedNetwork?.name})</p>
-                    <p className="text-sm text-white font-mono break-all select-all">
-                      {paymentData?.address || '0x...'}
+                    <p className="text-sm text-white font-mono break-all select-all cursor-pointer"
+                       onClick={() => { navigator.clipboard.writeText(paymentData?.payAddress || ''); }}>
+                      {paymentData?.payAddress || 'Generando...'}
                     </p>
+                    <p className="text-[10px] text-gray-600 mt-1">Click para copiar</p>
                   </div>
+
+                  {/* Invoice link */}
+                  {paymentData?.invoiceUrl && (
+                    <a href={paymentData.invoiceUrl} target="_blank" rel="noopener noreferrer"
+                       className="inline-block mb-4 text-xs text-trust-accent hover:underline">
+                      Abrir pagina de pago completa →
+                    </a>
+                  )}
 
                   {/* Countdown */}
                   <div className="flex items-center justify-center gap-2 text-sm text-gray-400 mb-4">

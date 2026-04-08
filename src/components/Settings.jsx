@@ -5,6 +5,8 @@ const LABEL_CLASS = 'block text-xs text-trust-muted font-medium mb-1.5';
 
 export default function Settings({ tier, user, onUpgrade }) {
   const [capsolverKey, setCapsolverKey] = useState('');
+  const [aiApiKey, setAiApiKey] = useState('');
+  const [aiProvider, setAiProvider] = useState('anthropic');
   const [saved, setSaved] = useState(false);
   const [balance, setBalance] = useState(null);
   const [checking, setChecking] = useState(false);
@@ -13,10 +15,18 @@ export default function Settings({ tier, user, onUpgrade }) {
     window.api.getSetting('capsolver_api_key').then((val) => {
       if (val) setCapsolverKey(val);
     });
+    window.api.getSetting('ai_api_key').then((val) => {
+      if (val) setAiApiKey(val);
+    });
+    window.api.getSetting('ai_provider').then((val) => {
+      if (val) setAiProvider(val);
+    });
   }, []);
 
   const handleSave = async () => {
     await window.api.setSetting('capsolver_api_key', capsolverKey.trim());
+    await window.api.setSetting('ai_api_key', aiApiKey.trim());
+    await window.api.setSetting('ai_provider', aiProvider);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };
@@ -105,6 +115,31 @@ export default function Settings({ tier, user, onUpgrade }) {
             </button>
           </div>
         )}
+      </div>
+
+      {/* AI Text Generation */}
+      <div className="bg-white border border-trust-border rounded-xl p-6 shadow-trust max-w-2xl mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-purple-500/10 rounded-xl flex items-center justify-center"><span className="text-lg">✨</span></div>
+          <div><h3 className="text-base font-bold text-trust-dark">AI — Generacion de texto</h3><p className="text-xs text-trust-muted">Para variar titulos y generar descripciones en Marketplace</p></div>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className={LABEL_CLASS}>Proveedor</label>
+            <select value={aiProvider} onChange={e => setAiProvider(e.target.value)} className={INPUT_CLASS}>
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openai">OpenAI (GPT)</option>
+            </select>
+          </div>
+          <div>
+            <label className={LABEL_CLASS}>API Key</label>
+            <input type="password" value={aiApiKey} onChange={e => setAiApiKey(e.target.value)} placeholder={aiProvider === 'anthropic' ? 'sk-ant-...' : 'sk-...'} className={INPUT_CLASS} />
+          </div>
+          <p className="text-[11px] text-trust-muted">Obtiene tu key en {aiProvider === 'anthropic' ? 'console.anthropic.com' : 'platform.openai.com'}</p>
+          <button onClick={handleSave} className="mt-3 px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors">
+            {saved ? 'Guardado' : 'Guardar API Key'}
+          </button>
+        </div>
       </div>
 
       {/* CapSolver */}

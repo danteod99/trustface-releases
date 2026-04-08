@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import ProBadge from './shared/ProBadge';
 
 const TAB_ICONS = {
@@ -81,6 +81,9 @@ const TAB_ICONS = {
 };
 
 export default function Sidebar({ activeTab, setActiveTab, tabs, tier, user, onLogout, onUpgrade, proTabs = [] }) {
+  const [appVersion, setAppVersion] = useState('');
+  useEffect(() => { window.api.getVersion?.().then(v => setAppVersion(v)).catch(() => {}); }, []);
+
   return (
     <aside className="w-56 bg-trust-dark flex flex-col">
       {/* Logo */}
@@ -89,7 +92,7 @@ export default function Sidebar({ activeTab, setActiveTab, tabs, tier, user, onL
           <span className="text-white">Trust</span>
           <span className="text-blue-400">Face</span>
         </h1>
-        <p className="text-white/40 text-xs mt-1">Facebook Manager v1.0.0</p>
+        <p className="text-white/40 text-xs mt-1">Facebook Manager v{appVersion || '...'}</p>
       </div>
 
       {/* Navigation */}
@@ -125,6 +128,15 @@ export default function Sidebar({ activeTab, setActiveTab, tabs, tier, user, onL
           </button>
         </div>
       )}
+
+      {/* Tutorial / Community */}
+      <div className="px-3 mb-2">
+        <a href="https://www.skool.com/artificial-humans-7653/about" target="_blank" rel="noopener noreferrer"
+          className="w-full flex items-center gap-2 py-2 px-3 rounded-lg text-xs font-medium text-trust-accent hover:bg-trust-accent/10 transition-colors border border-trust-accent/20">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+          Tutorial y Comunidad
+        </a>
+      </div>
 
       {/* User section */}
       <div className="p-3 border-t border-white/10">

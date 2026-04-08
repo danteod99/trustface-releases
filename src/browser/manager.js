@@ -695,25 +695,75 @@ async function launchBrowser(profile) {
         let page = entry.context.pages()[0];
         if (!page) page = await entry.context.newPage();
 
-        // Determine login credential: fb_user is the main login (could be email, phone, or username)
-        // If fb_user looks like email but there's also a phone-like value, prefer fb_user as-is
         const loginUser = profile.fb_user;
         const loginPass = profile.fb_pass;
         console.log(`[FB Login] Starting auto-login for ${profile.name} (user: ${loginUser})`);
 
-        await page.goto('https://www.facebook.com/login', { waitUntil: 'networkidle', timeout: 30000 });
-        await page.waitForTimeout(2000);
+        // Navigate to Facebook — use 'load' instead of 'networkidle' to avoid timeout
+        await page.goto('https://www.facebook.com/login', { waitUntil: 'load', timeout: 30000 });
+        await page.waitForTimeout(3000);
+
+        // ── Check if already logged in (cookies/session from previous run) ──
+        const urlAfterNav = page.url();
+        if (urlAfterNav.includes('facebook.com') && !urlAfterNav.includes('login') && !urlAfterNav.includes('checkpoint') && !urlAfterNav.includes('two_factor') && !urlAfterNav.includes('two_step')) {
+          console.log(`[FB Login] ${profile.name} already logged in (redirected to ${urlAfterNav}) — keeping browser open`);
+          await dismissFacebookPopups(page);
+          if (loginSuccessCallback) loginSuccessCallback(profile.id);
+          return;
+        }
 
         // Auto-dismiss Facebook popups (cookies, notifications)
         await dismissFacebookPopups(page);
 
-        // Fill email/phone field
+        // Check if login form exists
         const emailInput = await page.$('#email, input[name="email"]');
-        if (emailInput) {
-          await emailInput.click();
-          await emailInput.fill('');
-          await emailInput.type(loginUser, { delay: 30 });
+        if (!emailInput) {
+          // No login form — but we're still on /login URL. This could be:
+          // A) Already logged in (rare — usually redirects away from /login)
+          // B) Identity confirmation page (shows photo + name + "Continue" button)
+          // C) Account locked / verification required
+          const stillOnLogin = page.url().includes('/login');
+
+          if (stillOnLogin) {
+            // Check if this is an identity confirmation page (photo + name + continue)
+            // These pages show the user's profile photo and name without a password field
+            const hasProfilePhoto = await page.evaluate(() => {
+              const imgs = document.querySelectorAll('img');
+              for (const img of imgs) {
+                const rect = img.getBoundingClientRect();
+                // Profile photos are typically large, centered images
+                if (rect.width > 50 && rect.height > 50 && rect.width < 300) {
+                  const src = img.src || '';
+                  if (src.includes('scontent') || src.includes('fbcdn') || src.includes('profile')) return true;
+                }
+              }
+              return false;
+            }).catch(() => false);
+
+            const hasNoPasswordField = !(await page.$('#pass, input[name="pass"], input[type="password"]'));
+
+            if (hasProfilePhoto && hasNoPasswordField) {
+              console.log(`[FB Login] IDENTITY CONFIRMATION page detected for ${profile.name} — marking as banned and closing`);
+              if (loginFailCallback) loginFailCallback(profile.id, 'Confirmacion de identidad requerida — cuenta bloqueada');
+              await closeBrowser(profile.id);
+              return;
+            }
+
+            // Generic: on /login but no form — could be an error page
+            console.log(`[FB Login] On /login but no login form for ${profile.name} — leaving browser open`);
+            return;
+          }
+
+          // Not on /login — probably already logged in
+          console.log(`[FB Login] No login form found for ${profile.name} — already logged in, keeping browser open`);
+          if (loginSuccessCallback) loginSuccessCallback(profile.id);
+          return;
         }
+
+        // Fill email/phone field
+        await emailInput.click();
+        await emailInput.fill('');
+        await emailInput.type(loginUser, { delay: 30 });
         await page.waitForTimeout(500);
 
         // Fill password field
@@ -730,21 +780,331 @@ async function launchBrowser(profile) {
         if (loginBtn) {
           await loginBtn.click();
         } else {
-          // Fallback: press Enter
           await page.keyboard.press('Enter');
         }
 
         await page.waitForTimeout(5000);
         console.log(`[FB Login] Login attempt done for ${profile.name}`);
 
-        // Check if we're on Facebook home (login success)
-        const url = page.url();
-        if (url.includes('facebook.com') && !url.includes('login') && !url.includes('checkpoint')) {
-          console.log(`[FB Login] SUCCESS — ${profile.name} is logged in`);
-        } else if (url.includes('checkpoint')) {
-          console.log(`[FB Login] CHECKPOINT — ${profile.name} needs verification`);
+        // ── Detect page state after login attempt ──
+        let state = 'waiting';
+        for (let check = 0; check < 15; check++) {
+          const url = page.url();
+
+          // Quick success check first — already left login page
+          if (url.includes('facebook.com') && !url.includes('login') && !url.includes('checkpoint') && !url.includes('two_factor') && !url.includes('two_step')) {
+            state = 'success';
+            console.log(`[FB Login] SUCCESS — ${profile.name} is logged in`);
+            break;
+          }
+
+          const bodyText = await page.locator('body').textContent({ timeout: 3000 }).catch(() => '');
+          const bodyLower = bodyText.toLowerCase();
+
+          // 1) Wrong password / login error — close browser
+          const errorSelectors = ['#error_box', 'div[role="alert"]', '._9ay7'];
+          for (const sel of errorSelectors) {
+            try {
+              const errorEl = page.locator(sel).first();
+              if (await errorEl.isVisible({ timeout: 500 })) {
+                const errorText = await errorEl.textContent().catch(() => 'Error de login');
+                console.log(`[FB Login] LOGIN FAILED for ${profile.name}: ${errorText.trim()}`);
+                if (loginFailCallback) loginFailCallback(profile.id, errorText.trim());
+                await closeBrowser(profile.id);
+                return;
+              }
+            } catch { /* next */ }
+          }
+          // Also detect wrong password by known text on page
+          const wrongPassTexts = [
+            'contraseña que ingresaste es incorrecta',
+            'the password you entered is incorrect',
+            'password is incorrect',
+            'contraseña incorrecta',
+            'wrong password',
+            'doesn\'t match',
+            'no coincide',
+          ];
+          const hasWrongPass = wrongPassTexts.some(t => bodyLower.includes(t));
+          if (hasWrongPass) {
+            console.log(`[FB Login] WRONG PASSWORD for ${profile.name} — closing browser`);
+            if (loginFailCallback) loginFailCallback(profile.id, 'Contraseña incorrecta');
+            await closeBrowser(profile.id);
+            return;
+          }
+
+          // 2) Account banned/disabled
+          if (await checkForBanPage(page, profile)) {
+            console.log(`[FB Login] BANNED — ${profile.name} — closing browser`);
+            if (loginFailCallback) loginFailCallback(profile.id, 'Cuenta inhabilitada o suspendida');
+            await closeBrowser(profile.id);
+            return;
+          }
+
+          // 3) "Confirm on another device" — LANGUAGE-AGNOSTIC detection
+          // Instead of matching text, detect the page structure:
+          // - URL contains two_step_verification or checkpoint
+          // - No visible text/tel input (code page would have one)
+          // - Has a secondary link/button at the bottom ("Try another way" in any language)
+          const is2FAPage = url.includes('two_step') || url.includes('two_factor') || url.includes('checkpoint');
+          const hasVisibleCodeInput = await page.evaluate(() => {
+            const inputs = document.querySelectorAll('input[type="text"], input[type="tel"], input[type="number"]');
+            for (const inp of inputs) {
+              const rect = inp.getBoundingClientRect();
+              const name = (inp.name || '').toLowerCase();
+              if (rect.width > 0 && rect.height > 0 && name !== 'unused' && name !== 'q' && name !== 'search') return true;
+            }
+            return false;
+          }).catch(() => false);
+
+          if (is2FAPage && !hasVisibleCodeInput) {
+            console.log(`[FB Login] 2FA page without code input — looking for "Try another way" (any language)`);
+
+            // Language-agnostic: find the last visible <a> or small button on the page
+            // Facebook always puts "Try another way" as a link at the bottom of the confirm-device screen
+            const clickedAlternative = await page.evaluate(() => {
+              // Strategy 1: Find all visible <a> links on the page — the "try another way" is usually the last one
+              const links = document.querySelectorAll('a[href]');
+              const visibleLinks = [];
+              for (const link of links) {
+                const rect = link.getBoundingClientRect();
+                const text = (link.innerText || '').trim();
+                if (rect.width > 0 && rect.height > 0 && text.length > 2 && text.length < 80) {
+                  visibleLinks.push({ el: link, text, y: rect.top });
+                }
+              }
+              // Sort by Y position — "try another way" is usually near the bottom
+              visibleLinks.sort((a, b) => b.y - a.y);
+              // Click the bottom-most link that's not a navigation link
+              for (const link of visibleLinks) {
+                if (!link.el.href.includes('/home') && !link.el.href.includes('/notifications')) {
+                  link.el.click();
+                  return `Clicked bottom link: "${link.text}"`;
+                }
+              }
+
+              // Strategy 2: Find standalone text links (spans acting as buttons)
+              const spans = document.querySelectorAll('span[role="button"], div[role="button"]');
+              const visibleSpans = [];
+              for (const span of spans) {
+                const rect = span.getBoundingClientRect();
+                const text = (span.innerText || '').trim();
+                if (rect.width > 0 && rect.height > 0 && text.length > 3 && text.length < 80) {
+                  visibleSpans.push({ el: span, text, y: rect.top });
+                }
+              }
+              visibleSpans.sort((a, b) => b.y - a.y);
+              if (visibleSpans.length > 0) {
+                visibleSpans[0].el.click();
+                return `Clicked bottom span: "${visibleSpans[0].text}"`;
+              }
+
+              return null;
+            }).catch(() => null);
+
+            if (clickedAlternative) {
+              console.log(`[FB Login] ${clickedAlternative}`);
+              await page.waitForTimeout(4000);
+            } else {
+              console.log(`[FB Login] Could not find alternative method link`);
+            }
+
+            // Now on method selection page — select auth app radio (language-agnostic)
+            // Strategy: radio buttons exist, select the one associated with a 6-digit code icon
+            // Usually the first or second radio. We try each and look for keywords in ANY language
+            const hasRadios = await page.locator('input[type="radio"]').count().catch(() => 0);
+            if (hasRadios > 0) {
+              console.log(`[FB Login] Method selection: ${hasRadios} radio buttons found`);
+              const methodSelected = await page.evaluate(() => {
+                const radios = document.querySelectorAll('input[type="radio"]');
+
+                // Multi-language keywords for authentication app
+                const authKeywords = [
+                  'authenticat', 'autenticad', 'autenticaç', // EN/ES/PT partial match
+                  'code generator', 'generador', 'gerador', // EN/ES/PT
+                  'مصادقة', 'تطبيق', // Arabic: authentication, app
+                  'приложени', 'аутентифик', // Russian
+                  'authentifizierung', // German
+                  'authentification', // French
+                  '認証', '認証アプリ', // Japanese
+                  '인증', // Korean
+                  '验证', '身份验证', // Chinese
+                  'xác thực', // Vietnamese
+                  'kimlik doğrulama', // Turkish
+                  'uwierzytelni', // Polish
+                ];
+
+                for (const radio of radios) {
+                  let labelText = '';
+                  const labelledBy = radio.getAttribute('aria-labelledby');
+                  if (labelledBy) {
+                    const labelEl = document.getElementById(labelledBy);
+                    if (labelEl) labelText = (labelEl.innerText || labelEl.textContent || '').toLowerCase();
+                  }
+                  if (!labelText) {
+                    const container = radio.closest('div[role="listitem"]') || radio.parentElement?.parentElement || radio.parentElement;
+                    if (container) labelText = (container.innerText || '').toLowerCase();
+                  }
+
+                  for (const keyword of authKeywords) {
+                    if (labelText.includes(keyword)) {
+                      const target = radio.closest('label') || radio.closest('div[role="listitem"]') || radio.parentElement;
+                      if (target) target.click(); else radio.click();
+                      return `Selected: "${labelText.substring(0, 60)}" via "${keyword}"`;
+                    }
+                  }
+                }
+
+                // Fallback: if no keyword matched, just click the FIRST radio (usually auth app)
+                if (radios.length > 0) {
+                  const first = radios[0];
+                  const target = first.closest('label') || first.closest('div[role="listitem"]') || first.parentElement;
+                  if (target) target.click(); else first.click();
+                  return `Fallback: clicked first radio button`;
+                }
+
+                return null;
+              }).catch(() => null);
+
+              if (methodSelected) {
+                console.log(`[FB Login] ${methodSelected}`);
+                await page.waitForTimeout(2000);
+              }
+
+              // Click Continue/Submit button — language-agnostic: find the primary/main button
+              const clickedContinue = await page.evaluate(() => {
+                const buttons = document.querySelectorAll('button, div[role="button"]');
+                // Find the largest/most prominent button that's not a close/back button
+                let bestBtn = null;
+                let bestArea = 0;
+                for (const btn of buttons) {
+                  const rect = btn.getBoundingClientRect();
+                  if (rect.width === 0 || rect.height === 0) continue;
+                  const text = (btn.innerText || '').trim().toLowerCase();
+                  // Skip small icon buttons, close buttons, back buttons
+                  if (text.length === 0 || text.length > 30) continue;
+                  if (rect.width < 60) continue;
+                  const area = rect.width * rect.height;
+                  if (area > bestArea) {
+                    bestArea = area;
+                    bestBtn = btn;
+                  }
+                }
+                if (bestBtn) {
+                  bestBtn.click();
+                  return `Clicked main button: "${(bestBtn.innerText || '').trim().substring(0, 30)}"`;
+                }
+                return null;
+              }).catch(() => null);
+
+              if (clickedContinue) {
+                console.log(`[FB Login] ${clickedContinue}`);
+                await page.waitForTimeout(3000);
+              }
+            }
+
+            // Should now be on 2FA input page
+            state = '2fa';
+            break;
+          }
+
+          // 4) Two-factor / checkpoint pages
+          if (url.includes('two_factor') || url.includes('two_step_verification') || url.includes('checkpoint')) {
+            // Check if it's email verification
+            const isEmailVerify = await isEmailVerificationPage(page);
+            if (isEmailVerify) {
+              state = 'email_verify';
+              console.log(`[FB Login] Email verification detected for ${profile.name}`);
+              break;
+            }
+
+            // Check if a 2FA input is visible (any text/number input on the page)
+            try {
+              const tfaSelectors = [
+                'input[name="approvals_code"]',
+                'input[id="approvals_code"]',
+                'input[placeholder*="code"]',
+                'input[placeholder*="código"]',
+                'input[placeholder*="Code"]',
+                'input[autocomplete="one-time-code"]',
+                'input[type="text"]',
+                'input[type="tel"]',
+                'input[type="number"]',
+              ];
+              let foundInput = false;
+              for (const sel of tfaSelectors) {
+                const inp = page.locator(sel).first();
+                if (await inp.isVisible({ timeout: 500 })) {
+                  state = '2fa';
+                  console.log(`[FB Login] 2FA code input detected for ${profile.name} (${sel})`);
+                  foundInput = true;
+                  break;
+                }
+              }
+              if (foundInput) break;
+            } catch { /* not visible */ }
+
+            // If URL has two_factor or two_step_verification, treat as 2FA even without visible input yet
+            if (url.includes('two_factor') || url.includes('two_step_verification')) {
+              if (check >= 3) {
+                state = '2fa';
+                console.log(`[FB Login] 2FA page detected by URL for ${profile.name}: ${url}`);
+                break;
+              }
+            } else if (check >= 5) {
+              // Generic checkpoint that's not 2FA
+              state = 'checkpoint';
+              console.log(`[FB Login] CHECKPOINT — ${profile.name} at ${url}`);
+              break;
+            }
+          }
+
+          // 5) Success — left login page entirely
+          if (url.includes('facebook.com') && !url.includes('login') && !url.includes('checkpoint') && !url.includes('two_factor') && !url.includes('two_step')) {
+            state = 'success';
+            console.log(`[FB Login] SUCCESS — ${profile.name} is logged in`);
+            break;
+          }
+
+          // 6) Still on login page — check for error one more time next loop
+          await page.waitForTimeout(1000);
+          if (check % 5 === 4) console.log(`[FB Login] Still waiting... (${check + 1}s)`);
         }
+
+        // ── Handle detected state ──
+        if (state === '2fa') {
+          console.log(`[FB Login] Entering 2FA flow for ${profile.name}`);
+          await handleFb2FA(page, profile);
+          return;
+        }
+
+        if (state === 'email_verify') {
+          await handleEmailVerification(page, profile);
+          return;
+        }
+
+        if (state === 'checkpoint') {
+          console.log(`[FB Login] CHECKPOINT — ${profile.name} — closing browser`);
+          if (loginFailCallback) loginFailCallback(profile.id, 'Verificacion de seguridad requerida');
+          await closeBrowser(profile.id);
+          return;
+        }
+
+        if (state === 'success') {
+          await page.waitForTimeout(2000);
+          await dismissFacebookPopups(page);
+          if (loginSuccessCallback) loginSuccessCallback(profile.id);
+          console.log(`[FB Login] === ${profile.name} LOGGED IN ===`);
+          return;
+        }
+
+        // state === 'waiting' — timed out but DON'T close browser
+        // The user might want to handle it manually, or the profile might actually be logged in
+        console.log(`[FB Login] Timed out for ${profile.name} — leaving browser open for manual intervention`);
+
       } catch (err) {
+        // DON'T close browser on navigation errors — just log
+        // The browser might still be usable (timeout, network hiccup, etc.)
         console.error(`[FB Login] Error for ${profile.name}:`, err.message);
       }
     };
@@ -756,10 +1116,79 @@ async function launchBrowser(profile) {
         await new Promise((r) => setTimeout(r, 1500));
         const entry = activeBrowsers.get(profile.id);
         if (!entry) return;
+
+        // Close any restored tabs that aren't Facebook (e.g. Vercel, random sites)
+        const allPages = entry.context.pages();
+        for (const p of allPages) {
+          const pUrl = p.url();
+          if (pUrl && !pUrl.includes('facebook.com') && !pUrl.startsWith('about:') && !pUrl.startsWith('chrome://')) {
+            console.log(`[Browser] Closing non-Facebook tab: ${pUrl.substring(0, 80)}`);
+            await p.close().catch(() => {});
+          }
+        }
+
         let page = entry.context.pages()[0];
         if (!page) page = await entry.context.newPage();
         await page.goto('https://www.facebook.com/', { waitUntil: 'load', timeout: 20000 });
-        await page.waitForTimeout(2000);
+        await page.waitForTimeout(3000);
+
+        // Check if Facebook showed a re-login / identity confirmation screen
+        // Wait longer for feed to load before concluding session is expired
+        const currentUrl = page.url();
+
+        // Only check if we're on the login page or root — if redirected to home.php etc, it's fine
+        if (currentUrl.includes('/login') || currentUrl === 'https://www.facebook.com/' || currentUrl === 'https://www.facebook.com') {
+          // Wait up to 10 seconds for feed to appear
+          let isReLoginScreen = false;
+          for (let feedCheck = 0; feedCheck < 5; feedCheck++) {
+            await page.waitForTimeout(2000);
+            const checkUrl = page.url();
+
+            // If URL changed to something other than root/login, we're good
+            if (checkUrl.includes('home.php') || checkUrl.includes('/home') ||
+                (!checkUrl.includes('/login') && checkUrl !== 'https://www.facebook.com/' && checkUrl !== 'https://www.facebook.com')) {
+              console.log(`[FB Login] ${profile.name} feed loaded: ${checkUrl}`);
+              break;
+            }
+
+            // Check for re-login indicators: no password field, no feed, has profile photo
+            const pageState = await page.evaluate(() => {
+              const hasPasswordField = !!document.querySelector('input[type="password"], #pass');
+              const hasEmailField = !!document.querySelector('#email, input[name="email"]');
+              const hasFeed = !!document.querySelector('[role="feed"], [data-pagelet*="Feed"], [aria-label*="Feed"], [data-pagelet="Stories"]');
+              const hasNavBar = !!document.querySelector('[role="navigation"], [aria-label="Facebook"]');
+              const hasCreatePost = !!document.querySelector('[aria-label*="on your mind"], [aria-label*="que estas pensando"], [aria-label*="Create"]');
+              // Count large profile-like images
+              const largeImgs = Array.from(document.querySelectorAll('img')).filter(img => {
+                const rect = img.getBoundingClientRect();
+                return rect.width > 60 && rect.height > 60 && rect.width < 250;
+              });
+              return { hasPasswordField, hasEmailField, hasFeed, hasNavBar, hasCreatePost, largeImgCount: largeImgs.length };
+            }).catch(() => ({}));
+
+            // It's a re-login screen if: no feed, no nav bar, no create post, no login form, has profile photo
+            if (!pageState.hasFeed && !pageState.hasNavBar && !pageState.hasCreatePost &&
+                !pageState.hasPasswordField && !pageState.hasEmailField && pageState.largeImgCount > 0) {
+              if (feedCheck >= 3) { // Only conclude after enough wait time
+                isReLoginScreen = true;
+                break;
+              }
+            }
+
+            // If feed or nav bar appeared, it's fine
+            if (pageState.hasFeed || pageState.hasNavBar || pageState.hasCreatePost) {
+              break;
+            }
+          }
+
+          if (isReLoginScreen) {
+            console.log(`[FB Login] ${profile.name} session expired — re-login screen detected, marking as error and closing`);
+            if (loginFailCallback) loginFailCallback(profile.id, 'Sesion expirada — requiere re-login');
+            await closeBrowser(profile.id);
+            return;
+          }
+        }
+
         await dismissFacebookPopups(page);
       } catch {
         // Ignore navigation errors
@@ -1139,7 +1568,487 @@ async function loginToInstagram(page, profile) {
   }
 }
 
-// ─── 2FA Handler ────────────────────────────────────────────────────
+// ─── Facebook 2FA Handler ──────────────────────────────────────────
+
+async function handleFb2FA(page, profile) {
+  console.log(`[FB 2FA] === Starting Facebook 2FA for ${profile.name} ===`);
+
+  if (!profile.fb_2fa_secret) {
+    // No TOTP secret — check if email verification is possible
+    const isEmailVerify = await isEmailVerificationPage(page);
+    if (isEmailVerify && profile.fb_email && profile.fb_email_pass) {
+      console.log(`[FB 2FA] No TOTP secret but email verification detected — redirecting`);
+      await handleEmailVerification(page, profile);
+      return;
+    }
+    console.log(`[FB 2FA] No 2FA secret configured for ${profile.name} — closing browser`);
+    if (loginFailCallback) loginFailCallback(profile.id, '2FA requerido — sin secreto TOTP configurado');
+    await closeBrowser(profile.id);
+    return;
+  }
+
+  try {
+    await page.waitForTimeout(2000);
+    const currentUrl = page.url();
+    console.log(`[FB 2FA] URL: ${currentUrl}`);
+
+    // Step 0: Navigate through "confirm on another device" and method selection screens
+    // Wait for Facebook SPA to render real content (initial body is JSON)
+    console.log(`[FB 2FA] Waiting for Facebook to render...`);
+    for (let waitRender = 0; waitRender < 15; waitRender++) {
+      const rawText = await page.locator('body').textContent({ timeout: 2000 }).catch(() => '');
+      if (!rawText.startsWith('{') && rawText.length > 50) {
+        console.log(`[FB 2FA] Page rendered (${rawText.length} chars)`);
+        break;
+      }
+      await page.waitForTimeout(1000);
+    }
+    await page.waitForTimeout(2000);
+
+    // We may need to go through multiple screens before reaching the code input
+    for (let nav = 0; nav < 3; nav++) {
+      // Wait for real content on each step
+      await page.waitForTimeout(1500);
+      let bodyText = await page.locator('body').textContent({ timeout: 5000 }).catch(() => '');
+      // If body is still JSON, try innerText via evaluate
+      if (bodyText.startsWith('{') || bodyText.length < 50) {
+        bodyText = await page.evaluate(() => document.body.innerText || '').catch(() => '');
+      }
+      const bodyLower = bodyText.toLowerCase();
+      const currentNavUrl = page.url();
+      console.log(`[FB 2FA] Navigation step ${nav}, URL: ${currentNavUrl}`);
+      console.log(`[FB 2FA] Page text (first 500): ${bodyText.substring(0, 500)}`);
+
+      // Check if we already have a code input visible — if so, skip to step 1
+      let hasCodeInput = false;
+      const quickSelectors = ['input[name="approvals_code"]', 'input[id="approvals_code"]', 'input[autocomplete="one-time-code"]'];
+      for (const sel of quickSelectors) {
+        try {
+          if (await page.locator(sel).first().isVisible({ timeout: 500 })) {
+            hasCodeInput = true;
+            break;
+          }
+        } catch { /* next */ }
+      }
+      // Also check for any text/tel input that could be a code input
+      if (!hasCodeInput) {
+        try {
+          const inputs = await page.locator('input[type="text"], input[type="tel"], input[type="number"]').all();
+          for (const inp of inputs) {
+            if (await inp.isVisible({ timeout: 300 })) {
+              const name = await inp.getAttribute('name').catch(() => '');
+              if (name !== 'unused' && name !== 'q' && name !== 'search') {
+                hasCodeInput = true;
+                break;
+              }
+            }
+          }
+        } catch { /* skip */ }
+      }
+      if (hasCodeInput) {
+        console.log(`[FB 2FA] Code input already visible — skipping to code entry`);
+        break;
+      }
+
+      // Screen A: "Confirm on another device" — LANGUAGE-AGNOSTIC
+      // Detect by: no code input visible + has a link at the bottom of the page
+      const hasCodeInputNow = await page.evaluate(() => {
+        const inputs = document.querySelectorAll('input[type="text"], input[type="tel"], input[type="number"]');
+        for (const inp of inputs) {
+          const rect = inp.getBoundingClientRect();
+          const name = (inp.name || '').toLowerCase();
+          if (rect.width > 0 && rect.height > 0 && name !== 'unused' && name !== 'q' && name !== 'search') return true;
+        }
+        return false;
+      }).catch(() => false);
+
+      if (!hasCodeInputNow) {
+        console.log(`[FB 2FA] No code input visible — looking for alternative method link (any language)`);
+
+        // Click bottom-most link on the page (= "Try another way" in any language)
+        const clickedAlt = await page.evaluate(() => {
+          const links = document.querySelectorAll('a[href], span[role="button"], div[role="button"]');
+          const visible = [];
+          for (const el of links) {
+            const rect = el.getBoundingClientRect();
+            const text = (el.innerText || '').trim();
+            if (rect.width > 0 && rect.height > 0 && text.length > 2 && text.length < 80) {
+              visible.push({ el, text, y: rect.top });
+            }
+          }
+          visible.sort((a, b) => b.y - a.y);
+          for (const item of visible) {
+            const href = item.el.href || '';
+            if (!href.includes('/home') && !href.includes('/notifications') && !href.includes('#')) {
+              item.el.click();
+              return `Clicked: "${item.text}"`;
+            }
+          }
+          // Last resort: click last visible element
+          if (visible.length > 0) {
+            visible[0].el.click();
+            return `Clicked last visible: "${visible[0].text}"`;
+          }
+          return null;
+        }).catch(() => null);
+
+        if (clickedAlt) {
+          console.log(`[FB 2FA] ${clickedAlt}`);
+          await page.waitForTimeout(5000);
+        } else {
+          console.log(`[FB 2FA] No alternative link found`);
+        }
+        continue;
+      }
+
+      // Screen B: Method selection (radio buttons) — LANGUAGE-AGNOSTIC
+      const radioCount = await page.locator('input[type="radio"]').count().catch(() => 0);
+      if (radioCount > 0) {
+        console.log(`[FB 2FA] Method selection: ${radioCount} radio buttons`);
+
+        const methodSelected = await page.evaluate(() => {
+          const radios = document.querySelectorAll('input[type="radio"]');
+          // Multi-language keywords for authentication app
+          const authKeywords = [
+            'authenticat', 'autenticad', 'autenticaç',
+            'code generator', 'generador', 'gerador',
+            'مصادقة', 'تطبيق', 'приложени', 'аутентифик',
+            'authentifizierung', 'authentification',
+            '認証', '인증', '验证', '身份验证',
+            'xác thực', 'kimlik doğrulama', 'uwierzytelni',
+          ];
+
+          for (const radio of radios) {
+            let labelText = '';
+            const labelledBy = radio.getAttribute('aria-labelledby');
+            if (labelledBy) {
+              const labelEl = document.getElementById(labelledBy);
+              if (labelEl) labelText = (labelEl.innerText || labelEl.textContent || '').toLowerCase();
+            }
+            if (!labelText) {
+              const container = radio.closest('div[role="listitem"]') || radio.parentElement?.parentElement || radio.parentElement;
+              if (container) labelText = (container.innerText || '').toLowerCase();
+            }
+            for (const keyword of authKeywords) {
+              if (labelText.includes(keyword)) {
+                const target = radio.closest('label') || radio.closest('div[role="listitem"]') || radio.parentElement;
+                if (target) target.click(); else radio.click();
+                return `Selected: "${labelText.substring(0, 60)}" via "${keyword}"`;
+              }
+            }
+          }
+          // Fallback: click first radio
+          if (radios.length > 0) {
+            const target = radios[0].closest('label') || radios[0].parentElement;
+            if (target) target.click(); else radios[0].click();
+            return `Fallback: first radio`;
+          }
+          return null;
+        }).catch(() => null);
+
+        if (methodSelected) console.log(`[FB 2FA] ${methodSelected}`);
+        await page.waitForTimeout(2000);
+
+        // Click main/continue button — language-agnostic: biggest visible button
+        const clickedMain = await page.evaluate(() => {
+          const buttons = document.querySelectorAll('button, div[role="button"]');
+          let bestBtn = null;
+          let bestArea = 0;
+          for (const btn of buttons) {
+            const rect = btn.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) continue;
+            const text = (btn.innerText || '').trim();
+            if (text.length === 0 || text.length > 30 || rect.width < 60) continue;
+            const area = rect.width * rect.height;
+            if (area > bestArea) { bestArea = area; bestBtn = btn; }
+          }
+          if (bestBtn) {
+            bestBtn.click();
+            return `Clicked: "${(bestBtn.innerText || '').trim().substring(0, 30)}"`;
+          }
+          return null;
+        }).catch(() => null);
+
+        if (clickedMain) {
+          console.log(`[FB 2FA] ${clickedMain}`);
+          await page.waitForTimeout(3000);
+        }
+        continue;
+      }
+
+      // If we reach here, page doesn't match known screens — break and try to find input
+      console.log(`[FB 2FA] Unknown screen state — attempting to find code input`);
+      break;
+    }
+
+    // Step 1: Find the 2FA code input — wait up to 10 seconds for it to appear
+    let tfaInput = null;
+
+    for (let attempt = 0; attempt < 10; attempt++) {
+      // Try Facebook-specific selectors first
+      const fbSelectors = [
+        'input[name="approvals_code"]',
+        'input[id="approvals_code"]',
+        'input[autocomplete="one-time-code"]',
+        'input[placeholder*="code"]',
+        'input[placeholder*="código"]',
+        'input[placeholder*="Code"]',
+      ];
+
+      for (const sel of fbSelectors) {
+        try {
+          const input = page.locator(sel).first();
+          if (await input.isVisible({ timeout: 300 })) {
+            tfaInput = input;
+            console.log(`[FB 2FA] Found input via selector: ${sel}`);
+            break;
+          }
+        } catch { /* next */ }
+      }
+      if (tfaInput) break;
+
+      // Fallback: find any visible text/tel/number input (skip radio, password, hidden, checkbox)
+      const allInputs = await page.locator('input').all();
+      for (const input of allInputs) {
+        try {
+          if (await input.isVisible({ timeout: 300 })) {
+            const type = await input.getAttribute('type').catch(() => '');
+            const name = await input.getAttribute('name').catch(() => '');
+            if (type === 'hidden' || type === 'checkbox' || type === 'submit' || type === 'password' || type === 'radio') continue;
+            // Skip search inputs and unused radio-like fields
+            if (name === 'q' || name === 'search' || name === 'unused') continue;
+            tfaInput = input;
+            console.log(`[FB 2FA] Using fallback input: type="${type}" name="${name}"`);
+            break;
+          }
+        } catch { /* skip */ }
+      }
+      if (tfaInput) break;
+
+      if (attempt < 9) {
+        console.log(`[FB 2FA] No code input found yet, waiting... (attempt ${attempt + 1}/10)`);
+        await page.waitForTimeout(1000);
+      }
+    }
+
+    if (!tfaInput) {
+      console.log(`[FB 2FA] No code input found for ${profile.name} — closing browser`);
+      if (loginFailCallback) loginFailCallback(profile.id, '2FA requerido — no se encontro campo de codigo');
+      await closeBrowser(profile.id);
+      return;
+    }
+
+    // Step 2: Generate TOTP code — wait if close to time step boundary to avoid expired codes
+    const epoch = Math.floor(Date.now() / 1000);
+    const secondsRemaining = 30 - (epoch % 30);
+    if (secondsRemaining < 5) {
+      console.log(`[FB 2FA] Only ${secondsRemaining}s left in time step — waiting for fresh code...`);
+      await page.waitForTimeout((secondsRemaining + 1) * 1000);
+    }
+    const code = generateTOTP(profile.fb_2fa_secret);
+    console.log(`[FB 2FA] TOTP code: ${code} (${30 - (Math.floor(Date.now() / 1000) % 30)}s remaining)`);
+
+    await tfaInput.click({ timeout: 5000 });
+    await page.waitForTimeout(300);
+    await tfaInput.fill(code);
+    await page.waitForTimeout(500);
+
+    // Verify the code was entered
+    const val = await tfaInput.inputValue().catch(() => '');
+    console.log(`[FB 2FA] Input value after fill: "${val}"`);
+    if (val !== code) {
+      console.log(`[FB 2FA] fill() didn't work, trying type()...`);
+      await tfaInput.click({ clickCount: 3, timeout: 3000 });
+      await page.keyboard.type(code, { delay: 50 });
+      await page.waitForTimeout(300);
+    }
+
+    // Step 3: Click submit button — LANGUAGE-AGNOSTIC: find the biggest visible button
+    let clicked = false;
+    const clickedSubmit = await page.evaluate(() => {
+      const buttons = document.querySelectorAll('button, div[role="button"]');
+      let bestBtn = null;
+      let bestArea = 0;
+      for (const btn of buttons) {
+        const rect = btn.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) continue;
+        const text = (btn.innerText || '').trim();
+        if (text.length === 0 || text.length > 30 || rect.width < 60) continue;
+        const area = rect.width * rect.height;
+        if (area > bestArea) { bestArea = area; bestBtn = btn; }
+      }
+      if (bestBtn) {
+        bestBtn.click();
+        return `Clicked: "${(bestBtn.innerText || '').trim().substring(0, 30)}"`;
+      }
+      return null;
+    }).catch(() => null);
+
+    if (clickedSubmit) {
+      clicked = true;
+      console.log(`[FB 2FA] Submit ${clickedSubmit}`);
+    }
+    if (!clicked) {
+      console.log(`[FB 2FA] No submit button found, pressing Enter`);
+      await tfaInput.press('Enter');
+    }
+
+    // Step 4: Wait for result
+    console.log(`[FB 2FA] Waiting for response...`);
+    for (let i = 0; i < 15; i++) {
+      await page.waitForTimeout(1000);
+      const url = page.url();
+
+      // Success — navigated away from checkpoint/two_factor/login
+      if (url.includes('facebook.com') && !url.includes('login') && !url.includes('checkpoint') && !url.includes('two_factor')) {
+        console.log(`[FB 2FA] SUCCESS! Redirected to: ${url}`);
+        await page.waitForTimeout(2000);
+        await dismissFacebookPopups(page);
+        if (loginSuccessCallback) loginSuccessCallback(profile.id);
+        console.log(`[FB 2FA] === ${profile.name} LOGGED IN ===`);
+        return;
+      }
+
+      // Check for "save browser" / "trust device" / "remember device" prompts
+      // Language-agnostic: detect by structure — no code input visible + has a prominent button
+      const isTrustPrompt = await page.evaluate(() => {
+        const body = (document.body.innerText || '').toLowerCase();
+        // Check by text in many languages
+        const trustTexts = [
+          'save browser', 'trust this', 'remember this', 'save this',
+          'guardar navegador', 'confiar en este', 'recordar este',
+          'enregistrer le navigateur', 'se souvenir', 'faire confiance',
+          'browser speichern', 'diesem browser vertrauen',
+          'salvar navegador', 'confiar neste', 'lembrar este',
+          'حفظ المتصفح', 'الوثوق', 'تذكر هذا',
+          'сохранить браузер', 'доверять', 'запомнить',
+          '保存浏览器', '信任此', '记住此',
+          'ブラウザを保存', 'このブラウザを信頼', 'このブラウザを記憶',
+          '브라우저 저장', '이 브라우저를 신뢰',
+          'save login', 'guardar inicio', 'not now', 'ahora no',
+        ];
+        if (trustTexts.some(t => body.includes(t))) return true;
+
+        // Structure check: no visible code input + page has only 1-2 prominent buttons
+        const codeInputs = document.querySelectorAll('input[type="text"], input[type="tel"]');
+        let hasVisibleCodeInput = false;
+        for (const inp of codeInputs) {
+          if (inp.getBoundingClientRect().width > 0 && inp.name !== 'unused') hasVisibleCodeInput = true;
+        }
+        if (!hasVisibleCodeInput) {
+          const buttons = document.querySelectorAll('button, div[role="button"]');
+          const visibleBtns = Array.from(buttons).filter(b => b.getBoundingClientRect().width > 60 && (b.innerText || '').trim().length > 1 && (b.innerText || '').trim().length < 30);
+          if (visibleBtns.length >= 1 && visibleBtns.length <= 3) return true;
+        }
+        return false;
+      }).catch(() => false);
+
+      if (isTrustPrompt) {
+        console.log(`[FB 2FA] Trust/save device prompt detected — clicking main button`);
+        // Click the biggest button (Continue/Save/Trust)
+        const clicked = await page.evaluate(() => {
+          const buttons = document.querySelectorAll('button, div[role="button"]');
+          let bestBtn = null;
+          let bestArea = 0;
+          for (const btn of buttons) {
+            const rect = btn.getBoundingClientRect();
+            const text = (btn.innerText || '').trim();
+            if (rect.width < 60 || text.length < 1 || text.length > 30) continue;
+            const area = rect.width * rect.height;
+            if (area > bestArea) { bestArea = area; bestBtn = btn; }
+          }
+          if (bestBtn) { bestBtn.click(); return (bestBtn.innerText || '').trim(); }
+          return null;
+        }).catch(() => null);
+        if (clicked) console.log(`[FB 2FA] Clicked: "${clicked}"`);
+        await page.waitForTimeout(3000);
+        await dismissFacebookPopups(page);
+        if (loginSuccessCallback) loginSuccessCallback(profile.id);
+        console.log(`[FB 2FA] === ${profile.name} LOGGED IN (after trust prompt) ===`);
+        return;
+      }
+    }
+
+    // Still on 2FA page — wait for new time step and retry
+    console.log(`[FB 2FA] Still on 2FA, waiting for next time step before retry...`);
+    const retryEpoch = Math.floor(Date.now() / 1000);
+    const retryWait = 30 - (retryEpoch % 30) + 2; // wait until 2s into next time step
+    await page.waitForTimeout(retryWait * 1000);
+    const freshCode = generateTOTP(profile.fb_2fa_secret);
+    console.log(`[FB 2FA] Fresh code: ${freshCode} (${30 - (Math.floor(Date.now() / 1000) % 30)}s remaining)`);
+
+    if (tfaInput) {
+      await tfaInput.click({ clickCount: 3 }).catch(() => {});
+      await page.keyboard.type(freshCode, { delay: 50 });
+      await page.waitForTimeout(500);
+
+      // Click submit — language-agnostic: biggest visible button
+      await page.evaluate(() => {
+        const buttons = document.querySelectorAll('button, div[role="button"]');
+        let bestBtn = null;
+        let bestArea = 0;
+        for (const btn of buttons) {
+          const rect = btn.getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0) continue;
+          const text = (btn.innerText || '').trim();
+          if (text.length === 0 || text.length > 30 || rect.width < 60) continue;
+          const area = rect.width * rect.height;
+          if (area > bestArea) { bestArea = area; bestBtn = btn; }
+        }
+        if (bestBtn) bestBtn.click();
+      }).catch(() => {});
+
+      // Wait and check for success or trust prompt
+      for (let retryCheck = 0; retryCheck < 10; retryCheck++) {
+        await page.waitForTimeout(1000);
+        const finalUrl = page.url();
+
+        if (finalUrl.includes('facebook.com') && !finalUrl.includes('login') && !finalUrl.includes('checkpoint') && !finalUrl.includes('two_factor') && !finalUrl.includes('two_step')) {
+          await dismissFacebookPopups(page);
+          if (loginSuccessCallback) loginSuccessCallback(profile.id);
+          console.log(`[FB 2FA] === ${profile.name} LOGGED IN (retry) ===`);
+          return;
+        }
+
+        // Check for trust/save prompt after retry
+        const hasTrustRetry = await page.evaluate(() => {
+          const codeInputs = document.querySelectorAll('input[type="text"], input[type="tel"]');
+          let hasVisible = false;
+          for (const inp of codeInputs) { if (inp.getBoundingClientRect().width > 0 && inp.name !== 'unused') hasVisible = true; }
+          if (!hasVisible) {
+            const btns = Array.from(document.querySelectorAll('button, div[role="button"]')).filter(b => b.getBoundingClientRect().width > 60 && (b.innerText||'').trim().length > 1 && (b.innerText||'').trim().length < 30);
+            return btns.length >= 1 && btns.length <= 3;
+          }
+          return false;
+        }).catch(() => false);
+
+        if (hasTrustRetry) {
+          console.log(`[FB 2FA] Trust prompt after retry — clicking main button`);
+          await page.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll('button, div[role="button"]')).filter(b => b.getBoundingClientRect().width > 60);
+            let best = null, bestA = 0;
+            for (const b of btns) { const a = b.getBoundingClientRect().width * b.getBoundingClientRect().height; if (a > bestA) { bestA = a; best = b; } }
+            if (best) best.click();
+          }).catch(() => {});
+          await page.waitForTimeout(3000);
+          await dismissFacebookPopups(page);
+          if (loginSuccessCallback) loginSuccessCallback(profile.id);
+          console.log(`[FB 2FA] === ${profile.name} LOGGED IN (retry + trust) ===`);
+          return;
+        }
+      }
+    }
+
+    // Don't close browser — leave it open for manual intervention
+    console.log(`[FB 2FA] FAILED — could not complete 2FA for ${profile.name} — leaving browser open for manual action`);
+
+  } catch (err) {
+    // Don't close browser on errors — just log
+    console.log(`[FB 2FA] ERROR: ${err.message} — leaving browser open`);
+  }
+}
+
+// ─── Instagram 2FA Handler ────────────────────────────────────────────────────
 
 async function handle2FA(page, profile) {
   console.log(`[IG 2FA] === Starting 2FA for ${profile.name} ===`);
