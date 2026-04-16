@@ -444,41 +444,29 @@ ipcMain.handle('auth:google', async () => {
 
 ipcMain.handle('auth:register', async (_, email, password) => {
   try {
-    const { createClient } = require('@supabase/supabase-js');
-    const SUPABASE_URL = 'https://jlxaubqvgjahcsnotvih.supabase.co';
-    const SERVICE_ROLE_KEY = process.env.SERVICE_ROLE_KEY || '';
-
-    // Use admin API to create user with auto-confirm
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
-      auth: { autoRefreshToken: false, persistSession: false },
+    // Use server endpoint to create user with auto-confirmed email
+    const res = await fetch('https://www.trustmind.online/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
     });
+    const result = await res.json();
+    if (!res.ok || result.error) return { error: result.error || 'Error al registrar' };
 
-    const { data: newUser, error: createError } = await admin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true, // Auto-confirm email
-    });
-
-    if (createError) {
-      // If user already exists, just try to login
-      if (createError.message.includes('already') || createError.message.includes('exists')) {
-        return { error: 'Este correo ya tiene una cuenta. Intenta iniciar sesion.' };
-      }
-      return { error: createError.message };
-    }
-
-    // Now login with the new account
+    // Auto-login after successful registration
     const supabase = getSupabase();
     const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({ email, password });
+    if (loginError) return { success: true, message: 'Cuenta creada. Inicia sesión.' };
 
-    if (loginError) return { error: loginError.message };
+    if (loginData.session) {
+      saveSession(loginData.session);
+      currentUser = loginData.user;
+      const fingerprint = await getDeviceFingerprint();
+      const deviceName = getDeviceName();
+      await registerDevice(supabase, loginData.user.id, fingerprint, deviceName);
+    }
 
-    const user = loginData.user;
-    saveSession({ access_token: loginData.session.access_token, refresh_token: loginData.session.refresh_token, user });
-    currentUser = user;
-    cachedTier = 'free';
-
-    return { success: true, autoLogin: true, user: { id: user.id, email: user.email }, tier: 'free' };
+    return { success: true, autoLogin: true, user: loginData.user, tier: 'free' };
   } catch (err) {
     return { error: err.message };
   }
