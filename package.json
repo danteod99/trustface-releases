@@ -1,6 +1,6 @@
 {
   "name": "trustface-desktop",
-  "version": "1.4.6",
+  "version": "1.4.7",
   "description": "TrustFace Desktop — Facebook Multi-Account Manager with Marketplace Automation",
   "main": "main.js",
   "scripts": {
@@ -65,6 +65,11 @@
       "target": "nsis",
       "icon": "assets/icon.ico",
       "artifactName": "TrustFace-Desktop-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
+      "deleteAppDataOnUninstall": false
     },
     "publish": {
       "provider": "github",
