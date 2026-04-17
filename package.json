@@ -1,6 +1,6 @@
 {
   "name": "trustface-desktop",
-  "version": "1.4.5",
+  "version": "1.4.6",
   "description": "TrustFace Desktop — Facebook Multi-Account Manager with Marketplace Automation",
   "main": "main.js",
   "scripts": {
