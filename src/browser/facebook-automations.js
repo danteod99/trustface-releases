@@ -140,6 +140,16 @@ const FB_URLS = {
   profile: 'https://www.facebook.com/me/',
 };
 
+// ── Helper: Check if session is active (not redirected to login) ──
+async function checkNotLoggedIn(page) {
+  const url = page.url();
+  if (url.includes('/login') || url.includes('checkpoint') || url.includes('two_factor') || url.includes('two_step')) {
+    console.log(`[Session] NOT logged in — redirected to ${url}`);
+    return true;
+  }
+  return false;
+}
+
 // ── Marketplace: Create Listing ──
 async function marketplaceCreateListing(page, rawListing) {
   // Map from component keys (mpTitle, mpPrice...) to standard keys (title, price...)
@@ -161,6 +171,12 @@ async function marketplaceCreateListing(page, rawListing) {
   console.log(`[MP Create] Starting — title: "${listing.title}", price: ${listing.price}`);
 
   await page.goto(FB_URLS.marketplaceCreate, { waitUntil: 'load', timeout: 30000 });
+  await page.waitForTimeout(2000);
+
+  // Check if session expired — not logged in
+  if (await checkNotLoggedIn(page)) {
+    return { success: false, error: 'Sesion no iniciada — cerrando navegador', closeBrowser: true };
+  }
 
   // Check for listing limit / restrictions
   await page.waitForTimeout(3000);
@@ -1002,6 +1018,11 @@ async function marketplaceRepost(page, listingUrl, listingData) {
   await page.goto(listingUrl, { waitUntil: 'networkidle', timeout: 30000 });
   await page.waitForTimeout(2000);
 
+  // Check if session expired — not logged in
+  if (await checkNotLoggedIn(page)) {
+    return { success: false, error: 'Sesion no iniciada — cerrando navegador', closeBrowser: true };
+  }
+
   const moreBtn = await page.$('[aria-label*="Mas"], [aria-label*="More"]');
   if (moreBtn) {
     await moreBtn.click();
@@ -1299,6 +1320,12 @@ async function scrapeMarketplace(page, searchQuery, maxResults = 50) {
   console.log(`[MP Scrape] Starting — query: "${searchQuery}", max: ${maxResults}`);
   const url = `https://www.facebook.com/marketplace/search/?query=${encodeURIComponent(searchQuery)}`;
   await page.goto(url, { waitUntil: 'load', timeout: 30000 });
+  await page.waitForTimeout(2000);
+
+  // Check if session expired — not logged in
+  if (await checkNotLoggedIn(page)) {
+    return { success: false, error: 'Sesion no iniciada — cerrando navegador', closeBrowser: true };
+  }
 
   // Wait for Facebook SPA to render listings
   console.log(`[MP Scrape] Waiting for listings to render...`);
@@ -1430,6 +1457,7 @@ async function deepScrapeMarketplace(page, searchQuery, maxResults = 20) {
 
   // First do a normal scrape to get listing URLs
   const basicListings = await scrapeMarketplace(page, searchQuery, maxResults);
+  if (basicListings.closeBrowser) return basicListings;
   if (basicListings.length === 0) {
     console.log(`[MP Deep] No listings found`);
     return [];
@@ -1622,6 +1650,7 @@ async function contactMarketplaceSellers(page, searchQuery, message, options = {
   } else {
     // Scrape listings by search query
     listings = await scrapeMarketplace(page, searchQuery, maxContacts * 2);
+    if (listings.closeBrowser) return listings;
     if (listings.length === 0) {
       console.log(`[MP Contact] No listings found for "${searchQuery}"`);
       return { contacted: 0, errors: 0, listings: 0 };
@@ -1766,32 +1795,459 @@ async function contactMarketplaceSellers(page, searchQuery, message, options = {
   return { contacted, errors, listings: listings.length };
 }
 
-// ── Reply to Marketplace Messages ──
+// ── Reply to Marketplace Messages (template-based) ──
+// Same strategy as chatbot but uses a fixed template instead of AI.
 async function autoReplyMarketplace(page, replyTemplate) {
-  await page.goto('https://www.facebook.com/marketplace/you/selling', { waitUntil: 'networkidle', timeout: 30000 });
-  await page.waitForTimeout(2000);
+  await page.goto('https://www.facebook.com/marketplace/you/selling', { waitUntil: 'load', timeout: 30000 });
+  await page.waitForTimeout(3000);
 
-  // Look for unread messages indicators
-  const unreadBadges = await page.$$('[aria-label*="mensaje"], [aria-label*="message"]');
-  let replied = 0;
-
-  for (const badge of unreadBadges) {
-    try {
-      await badge.click();
-      await page.waitForTimeout(2000);
-
-      const msgBox = await page.$('[contenteditable="true"]');
-      if (msgBox) {
-        await msgBox.click();
-        await msgBox.type(replyTemplate, { delay: humanDelay(30, 60) });
-        await page.keyboard.press('Enter');
-        replied++;
-        await page.waitForTimeout(randomBetween(3000, 8000));
-      }
-    } catch {}
+  if (await checkNotLoggedIn(page)) {
+    return { success: false, error: 'Sesion no iniciada — cerrando navegador', closeBrowser: true };
   }
 
-  return { replied };
+  // Collect listing links
+  let listingLinks = await _collectListingLinks(page);
+  if (listingLinks.length === 0) {
+    return { replied: 0, skipped: 0, errors: 0, message: 'No se encontraron listings en tu pagina de ventas' };
+  }
+
+  console.log(`[MP AutoReply] Found ${listingLinks.length} listings`);
+  let replied = 0, skipped = 0, errors = 0;
+
+  for (let li = 0; li < listingLinks.length && replied + skipped + errors < 20; li++) {
+    try {
+      await page.goto(listingLinks[li].href, { waitUntil: 'load', timeout: 20000 });
+      await page.waitForTimeout(2000);
+      if (await checkNotLoggedIn(page)) break;
+
+      // Dismiss PIN prompt if shown
+      await _dismissPinPrompt(page);
+
+      let msgBox = await _findMessageBox(page);
+      if (!msgBox) {
+        await _clickMessageButton(page);
+        await page.waitForTimeout(2000);
+        await _dismissPinPrompt(page);
+        msgBox = await _findMessageBox(page);
+      }
+      if (!msgBox) { skipped++; continue; }
+
+      // Check last message is not ours
+      const lastIsOurs = await _lastMessageIsOurs(page);
+      if (lastIsOurs) { skipped++; continue; }
+
+      await msgBox.click();
+      await page.waitForTimeout(300);
+      await msgBox.type(replyTemplate, { delay: humanDelay(20, 50) });
+      await page.waitForTimeout(500);
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(2000);
+      replied++;
+      console.log(`[MP AutoReply] Listing ${li + 1}: replied`);
+      await page.waitForTimeout(randomBetween(2000, 5000));
+    } catch (err) {
+      console.log(`[MP AutoReply] Listing ${li + 1}: error — ${err.message}`);
+      errors++;
+    }
+  }
+
+  console.log(`[MP AutoReply] Done — replied: ${replied}, skipped: ${skipped}, errors: ${errors}`);
+  return { replied, skipped, errors };
+}
+
+// ── Shared helpers for marketplace messaging ──
+
+async function _collectListingLinks(page) {
+  // Scroll to load listings
+  for (let s = 0; s < 3; s++) {
+    await page.evaluate(() => window.scrollBy(0, 500));
+    await page.waitForTimeout(1000);
+  }
+  return await page.evaluate(() => {
+    const links = [];
+    const anchors = document.querySelectorAll('a[href*="/marketplace/item/"]');
+    for (const a of anchors) {
+      const href = a.href || a.getAttribute('href') || '';
+      if (href && !links.some(l => l.href === href)) {
+        const title = (a.innerText || '').trim().substring(0, 80);
+        links.push({ href: href.startsWith('http') ? href : `https://www.facebook.com${href}`, title });
+      }
+    }
+    return links;
+  }).catch(() => []);
+}
+
+async function _findMessageBox(page) {
+  const selectors = [
+    '[aria-label*="Mensaje"][contenteditable="true"]',
+    '[aria-label*="Message"][contenteditable="true"]',
+    '[aria-label*="Aa"][contenteditable="true"]',
+    'p[contenteditable="true"]',
+    '[role="textbox"][contenteditable="true"]',
+    'div[contenteditable="true"]:not([aria-label*="Buscar"]):not([aria-label*="Search"])',
+  ];
+  for (const sel of selectors) {
+    try {
+      const el = await page.$(sel);
+      if (el && await el.isVisible()) return el;
+    } catch {}
+  }
+  return null;
+}
+
+async function _clickMessageButton(page) {
+  return await page.evaluate(() => {
+    const btns = document.querySelectorAll('a, div[role="button"], span[role="button"], button');
+    for (const btn of btns) {
+      const text = (btn.innerText || '').toLowerCase().trim();
+      const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+      if (text.includes('message again') || text.includes('enviar mensaje de nuevo') ||
+          text.includes('mensaje de nuevo') || text.includes('volver a enviar') ||
+          text.includes('mensaje') || text.includes('message') || text.includes('responder') ||
+          ariaLabel.includes('mensaje') || ariaLabel.includes('message')) {
+        const rect = btn.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) { btn.click(); return true; }
+      }
+    }
+    return false;
+  }).catch(() => false);
+}
+
+// Dismiss Facebook's "Create a PIN" popup for end-to-end encrypted chats
+async function _dismissPinPrompt(page) {
+  // Try multiple dismiss strategies
+  const dismissed = await page.evaluate(() => {
+    const body = (document.body.innerText || '').toLowerCase();
+    if (!body.includes('create a pin') && !body.includes('crear un pin') && !body.includes('crea un pin')) {
+      return 'no-pin';
+    }
+
+    // Strategy 1: Click "Not now" / "Ahora no" / "Skip" / close button
+    const dismissTexts = ['not now', 'ahora no', 'skip', 'omitir', 'cancelar', 'cancel', 'close', 'cerrar', 'later', 'despues'];
+    const allClickable = document.querySelectorAll('a, button, div[role="button"], span[role="button"], [aria-label*="Close"], [aria-label*="Cerrar"]');
+    for (const el of allClickable) {
+      const text = (el.innerText || '').toLowerCase().trim();
+      const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
+      for (const dismiss of dismissTexts) {
+        if (text.includes(dismiss) || ariaLabel.includes(dismiss)) {
+          el.click();
+          return `clicked: ${text || ariaLabel}`;
+        }
+      }
+    }
+
+    // Strategy 2: Click X / close button by aria-label
+    const closeBtn = document.querySelector('[aria-label="Close"], [aria-label="Cerrar"], [aria-label="close"]');
+    if (closeBtn) {
+      closeBtn.click();
+      return 'clicked: close-btn';
+    }
+
+    // Strategy 3: Press Escape
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    return 'pressed-escape';
+  }).catch(() => 'error');
+
+  if (dismissed && dismissed !== 'no-pin') {
+    console.log(`[MP] PIN prompt dismissed: ${dismissed}`);
+    await page.waitForTimeout(2000);
+
+    // Check if it's still showing — try pressing Escape as fallback
+    const stillShowing = await page.evaluate(() => {
+      return (document.body.innerText || '').toLowerCase().includes('create a pin') ||
+             (document.body.innerText || '').toLowerCase().includes('crear un pin');
+    }).catch(() => false);
+
+    if (stillShowing) {
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(1000);
+      // Try clicking outside the modal
+      await page.mouse.click(10, 10);
+      await page.waitForTimeout(1000);
+      console.log(`[MP] PIN prompt still showing — tried Escape + click outside`);
+    }
+  }
+
+  return dismissed;
+}
+
+async function _lastMessageIsOurs(page) {
+  return await page.evaluate(() => {
+    const allText = document.querySelectorAll('div[dir="auto"]');
+    if (allText.length === 0) return false;
+    const last = allText[allText.length - 1];
+    const bubble = last.closest('div[class]');
+    if (!bubble) return false;
+    const rect = bubble.getBoundingClientRect();
+    const viewWidth = window.innerWidth || 360;
+    return rect.right > viewWidth * 0.7;
+  }).catch(() => false);
+}
+
+// ── Marketplace Chatbot (AI-powered auto-reply) ──
+// Strategy: Facebook mobile (360px viewport) doesn't support /messages/t/.
+// Instead we go to /marketplace/you/selling → click each listing → open buyer chat → read & reply.
+async function chatbotMarketplace(page, options = {}) {
+  const { instructions, generateResponse, maxConversations = 20 } = options;
+
+  if (!generateResponse) {
+    return { success: false, error: 'No se proporcionó función de generación de IA' };
+  }
+
+  // Step 1: Go to "Your Selling" page — works on mobile viewport
+  await page.goto('https://www.facebook.com/marketplace/you/selling', { waitUntil: 'load', timeout: 30000 });
+  await page.waitForTimeout(3000);
+
+  if (await checkNotLoggedIn(page)) {
+    return { success: false, error: 'Sesion no iniciada — cerrando navegador', closeBrowser: true };
+  }
+
+  console.log(`[MP Chatbot] On selling page: ${page.url()}`);
+
+  // Step 2: Collect listing links from the selling page
+  let listingLinks = await page.evaluate(() => {
+    const links = [];
+    const anchors = document.querySelectorAll('a[href*="/marketplace/item/"]');
+    for (const a of anchors) {
+      const href = a.href || a.getAttribute('href') || '';
+      if (href && !links.includes(href)) {
+        // Get listing title from nearby text
+        const title = (a.innerText || '').trim().substring(0, 80);
+        links.push({ href: href.startsWith('http') ? href : `https://www.facebook.com${href}`, title });
+      }
+    }
+    return links;
+  }).catch(() => []);
+
+  // Scroll to load more listings
+  if (listingLinks.length === 0) {
+    for (let s = 0; s < 5; s++) {
+      await page.evaluate(() => window.scrollBy(0, 500));
+      await page.waitForTimeout(1500);
+    }
+    listingLinks = await page.evaluate(() => {
+      const links = [];
+      const anchors = document.querySelectorAll('a[href*="/marketplace/item/"]');
+      for (const a of anchors) {
+        const href = a.href || a.getAttribute('href') || '';
+        if (href && !links.some(l => l.href === href)) {
+          const title = (a.innerText || '').trim().substring(0, 80);
+          links.push({ href: href.startsWith('http') ? href : `https://www.facebook.com${href}`, title });
+        }
+      }
+      return links;
+    }).catch(() => []);
+  }
+
+  if (listingLinks.length === 0) {
+    console.log(`[MP Chatbot] No listings found on selling page`);
+    return { replied: 0, skipped: 0, errors: 0, message: 'No se encontraron listings en tu pagina de ventas' };
+  }
+
+  console.log(`[MP Chatbot] Found ${listingLinks.length} listings`);
+
+  let replied = 0;
+  let skipped = 0;
+  let errors = 0;
+  let processedConversations = 0;
+
+  // Step 3: Visit each listing and check for buyer messages
+  for (let li = 0; li < listingLinks.length && processedConversations < maxConversations; li++) {
+    const listing = listingLinks[li];
+    try {
+      console.log(`[MP Chatbot] Listing ${li + 1}/${listingLinks.length}: ${listing.title || listing.href}`);
+      await page.goto(listing.href, { waitUntil: 'load', timeout: 20000 });
+      await page.waitForTimeout(2000);
+
+      // Check if redirected to login
+      if (await checkNotLoggedIn(page)) {
+        console.log(`[MP Chatbot] Session lost during navigation`);
+        break;
+      }
+
+      // Dismiss PIN prompt if shown
+      await _dismissPinPrompt(page);
+
+      // Get listing info from the page
+      const listingInfo = await page.evaluate(() => {
+        const body = document.body.innerText || '';
+        let title = '';
+        let price = '';
+        // Title is usually in a large heading
+        const h1 = document.querySelector('h1, [role="heading"]');
+        if (h1) title = (h1.innerText || '').trim();
+        // Price is often near the top with currency symbols
+        const priceMatch = body.match(/[\$S\/][\s]?[\d,.]+|[\d,.]+\s?(?:USD|PEN|MXN|ARS|COP|EUR)/i);
+        if (priceMatch) price = priceMatch[0].trim();
+        return { title: title || '', price: price || '' };
+      }).catch(() => ({ title: listing.title, price: '' }));
+
+      // Look for buyer message threads / "Messages" section on the listing page
+      // On mobile, individual listing pages show a "Message" button or existing conversation
+      // Try to find and click "See all" messages or individual buyer conversations
+      const buyerLinks = await page.evaluate(() => {
+        const results = [];
+        // Look for message/conversation indicators
+        const allLinks = document.querySelectorAll('a[href*="/messages/"], a[href*="messaging"], [role="button"]');
+        for (const el of allLinks) {
+          const text = (el.innerText || '').toLowerCase().trim();
+          if (text.includes('mensaje') || text.includes('message') || text.includes('responder') || text.includes('reply')) {
+            results.push({ type: 'button', text });
+          }
+        }
+        // Also look for buyer conversation rows
+        const rows = document.querySelectorAll('[role="listitem"], [role="row"]');
+        for (const row of rows) {
+          const text = (row.innerText || '').trim();
+          if (text.length > 2 && text.length < 200) {
+            results.push({ type: 'row', text: text.substring(0, 60) });
+          }
+        }
+        return results;
+      }).catch(() => []);
+
+      console.log(`[MP Chatbot] Listing has ${buyerLinks.length} message indicators`);
+
+      // Try to open the chat/messaging section
+      // On mobile Facebook, clicking on a listing as seller shows buyer conversations
+      // Look for the messaging area or chat popup
+
+      // First, try to find the message input directly (some listings show inline chat)
+      let msgBox = await _findMessageBox(page);
+
+      if (!msgBox) {
+        const clickedMsg = await _clickMessageButton(page);
+        if (clickedMsg) {
+          console.log(`[MP Chatbot] Clicked message button`);
+          await page.waitForTimeout(3000);
+          await _dismissPinPrompt(page);
+          msgBox = await _findMessageBox(page);
+        }
+      }
+
+      if (!msgBox) {
+        // No chat found on this listing — might have no messages
+        console.log(`[MP Chatbot] Listing ${li + 1}: no chat found — skipping`);
+        skipped++;
+        continue;
+      }
+
+      // Read conversation messages
+      const conversationData = await page.evaluate(() => {
+        const messages = [];
+        // Look for message bubbles — try multiple selectors
+        const msgContainers = document.querySelectorAll(
+          '[role="row"] div[dir="auto"], ' +
+          '[data-scope="messages_table"] div[dir="auto"], ' +
+          'div[dir="auto"]'
+        );
+
+        const seen = new Set();
+        for (const el of msgContainers) {
+          const text = (el.innerText || '').trim();
+          if (!text || text.length < 1 || text.length > 2000 || seen.has(text)) continue;
+          seen.add(text);
+
+          // Skip UI labels (buttons, headers, etc)
+          const tag = el.tagName.toLowerCase();
+          const parent = el.parentElement;
+          if (parent && (parent.tagName === 'BUTTON' || parent.getAttribute('role') === 'button')) continue;
+
+          // Determine sender by position
+          const bubble = el.closest('div[class]');
+          if (!bubble) continue;
+          const rect = bubble.getBoundingClientRect();
+          const viewWidth = window.innerWidth || 360;
+          const isOutgoing = rect.right > viewWidth * 0.7;
+
+          messages.push({ text, from: isOutgoing ? 'seller' : 'buyer' });
+        }
+
+        return messages;
+      }).catch(() => []);
+
+      if (conversationData.length === 0) {
+        console.log(`[MP Chatbot] Listing ${li + 1}: no messages readable — skipping`);
+        skipped++;
+        continue;
+      }
+
+      processedConversations++;
+
+      // Skip if last message is from us
+      const lastMsg = conversationData[conversationData.length - 1];
+      if (lastMsg.from === 'seller') {
+        console.log(`[MP Chatbot] Listing ${li + 1}: already replied — skipping`);
+        skipped++;
+        continue;
+      }
+
+      // Build AI prompt
+      const history = conversationData
+        .slice(-10)
+        .map(m => `${m.from === 'buyer' ? 'Comprador' : 'Vendedor'}: ${m.text}`)
+        .join('\n');
+
+      const listingCtx = listingInfo.title
+        ? `Producto: ${listingInfo.title}${listingInfo.price ? ` — Precio: ${listingInfo.price}` : ''}`
+        : '';
+
+      const defaultInstructions = `Eres un vendedor amigable en Facebook Marketplace. Responde de forma natural, corta y directa.
+- Responde en el mismo idioma que el comprador.
+- Si preguntan si esta disponible, di que si.
+- Si preguntan por el precio, confirma el precio publicado.
+- Si quieren negociar, di que el precio es firme pero puedes considerar ofertas razonables.
+- Si quieren coordinar entrega/envio, pregunta por su ubicacion.
+- Maximo 2 oraciones. No uses emojis excesivos. Suena humano, no como bot.`;
+
+      const prompt = `${instructions || defaultInstructions}
+
+${listingCtx ? `\n${listingCtx}\n` : ''}
+Conversacion reciente:
+${history}
+
+Responde SOLO con el mensaje que debes enviar. Sin comillas, sin explicaciones, sin prefijos.`;
+
+      console.log(`[MP Chatbot] Listing ${li + 1}: buyer says: "${lastMsg.text}"`);
+      console.log(`[MP Chatbot] Generating AI response...`);
+
+      const aiResponse = await generateResponse(prompt);
+      if (!aiResponse || aiResponse.error) {
+        console.log(`[MP Chatbot] AI error: ${aiResponse?.error || 'empty'}`);
+        errors++;
+        continue;
+      }
+
+      const reply = (typeof aiResponse === 'string' ? aiResponse : aiResponse.text || '').trim().replace(/^["']|["']$/g, '');
+      if (!reply) {
+        console.log(`[MP Chatbot] AI returned empty response`);
+        errors++;
+        continue;
+      }
+
+      console.log(`[MP Chatbot] AI reply: "${reply}"`);
+
+      // Send reply
+      await msgBox.click();
+      await page.waitForTimeout(300);
+      await msgBox.type(reply, { delay: humanDelay(20, 50) });
+      await page.waitForTimeout(500);
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(2000);
+
+      replied++;
+      console.log(`[MP Chatbot] Listing ${li + 1}: reply sent!`);
+
+      await page.waitForTimeout(randomBetween(3000, 7000));
+
+    } catch (err) {
+      console.log(`[MP Chatbot] Listing ${li + 1}: error — ${err.message}`);
+      errors++;
+    }
+  }
+
+  console.log(`[MP Chatbot] Done — replied: ${replied}, skipped: ${skipped}, errors: ${errors}`);
+  return { replied, skipped, errors };
 }
 
 // ── Warm-up Account ──
@@ -1858,6 +2314,7 @@ module.exports = {
   deepScrapeMarketplace,
   contactMarketplaceSellers,
   autoReplyMarketplace,
+  chatbotMarketplace,
   warmupAccount,
   resetUsedImages,
   getImageStats,

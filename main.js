@@ -1341,7 +1341,17 @@ ipcMain.handle('warmup:getAll', () => {
   const rows = db.prepare('SELECT * FROM warmup_status').all();
   const result = {};
   for (const row of rows) {
-    result[row.profile_id] = row;
+    result[row.profile_id] = {
+      ...row,
+      started: !!(row.started_at || row.day > 0),
+      completed: row.day > 14 || (row.day === 14 && !row.active),
+      todayActions: {
+        likes: row.today_likes || 0,
+        friends: row.today_follows || 0,
+        posts: row.today_stories || 0,
+        groups: row.today_comments || 0,
+      },
+    };
   }
   return result;
 });
@@ -1478,13 +1488,23 @@ ipcMain.handle('scrape:delete', (_, dataType) => {
 
 const fb = require('./src/browser/facebook-automations');
 
+// Helper: close browser if automation detects expired session
+async function handleMarketplaceResult(result, profileId) {
+  if (result && result.closeBrowser) {
+    console.log(`[Marketplace] Session expired for profile ${profileId} — closing browser`);
+    closeBrowser(profileId).catch(() => {});
+  }
+  return result;
+}
+
 ipcMain.handle('fb:marketplace-create', async (_, profileId, listing) => {
   try {
     const entry = getActiveBrowsers().get(profileId);
     if (!entry?.context) return { error: 'Browser not running' };
     const page = entry.context.pages()[0];
     if (!page) return { error: 'No page available' };
-    return await fb.marketplaceCreateListing(page, listing);
+    const result = await fb.marketplaceCreateListing(page, listing);
+    return await handleMarketplaceResult(result, profileId);
   } catch (err) { return { error: err.message }; }
 });
 
@@ -1494,7 +1514,8 @@ ipcMain.handle('fb:marketplace-repost', async (_, profileId, listingUrl, listing
     if (!entry?.context) return { error: 'Browser not running' };
     const page = entry.context.pages()[0];
     if (!page) return { error: 'No page available' };
-    return await fb.marketplaceRepost(page, listingUrl, listingData);
+    const result = await fb.marketplaceRepost(page, listingUrl, listingData);
+    return await handleMarketplaceResult(result, profileId);
   } catch (err) { return { error: err.message }; }
 });
 
@@ -1504,7 +1525,8 @@ ipcMain.handle('fb:marketplace-scrape', async (_, profileId, query, maxResults) 
     if (!_entry?.context) return { error: 'Browser not running' };
     const _page = _entry.context.pages()[0];
     if (!_page) return { error: 'No page available' };
-    return await fb.scrapeMarketplace(_page, query, maxResults);
+    const result = await fb.scrapeMarketplace(_page, query, maxResults);
+    return await handleMarketplaceResult(result, profileId);
   } catch (err) { return { error: err.message }; }
 });
 
@@ -1514,7 +1536,8 @@ ipcMain.handle('fb:marketplace-deep-scrape', async (_, profileId, query, maxResu
     if (!_entry?.context) return { error: 'Browser not running' };
     const _page = _entry.context.pages()[0];
     if (!_page) return { error: 'No page available' };
-    return await fb.deepScrapeMarketplace(_page, query, maxResults);
+    const result = await fb.deepScrapeMarketplace(_page, query, maxResults);
+    return await handleMarketplaceResult(result, profileId);
   } catch (err) { return { error: err.message }; }
 });
 
@@ -1524,7 +1547,66 @@ ipcMain.handle('fb:marketplace-autoreply', async (_, profileId, template) => {
     if (!_entry?.context) return { error: 'Browser not running' };
     const _page = _entry.context.pages()[0];
     if (!_page) return { error: 'No page available' };
-    return await fb.autoReplyMarketplace(_page, template);
+    const result = await fb.autoReplyMarketplace(_page, template);
+    return await handleMarketplaceResult(result, profileId);
+  } catch (err) { return { error: err.message }; }
+});
+
+ipcMain.handle('fb:marketplace-chatbot', async (_, profileId, instructions) => {
+  try {
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
+
+    // Build the AI generation function that chatbotMarketplace will call per conversation
+    const generateResponse = async (prompt) => {
+      return new Promise((resolve) => {
+        const https = require('https');
+        let resolvedKey = '';
+        try {
+          const db = getDb();
+          const row = db.prepare("SELECT value FROM settings WHERE key = 'ai_api_key'").get();
+          if (row) resolvedKey = row.value;
+        } catch {}
+        if (!resolvedKey) resolvedKey = process.env.ANTHROPIC_API_KEY || '';
+        if (!resolvedKey) { resolve({ error: 'No hay API key configurado' }); return; }
+
+        const body = JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 150,
+          messages: [{ role: 'user', content: prompt }],
+        });
+        const req = https.request({
+          hostname: 'api.anthropic.com',
+          path: '/v1/messages',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': resolvedKey,
+            'anthropic-version': '2023-06-01',
+            'Content-Length': Buffer.byteLength(body),
+          },
+        }, (res) => {
+          let data = '';
+          res.on('data', (chunk) => { data += chunk; });
+          res.on('end', () => {
+            try {
+              const json = JSON.parse(data);
+              resolve(json.content?.[0]?.text || '');
+            } catch (err) {
+              resolve({ error: err.message });
+            }
+          });
+        });
+        req.on('error', (err) => resolve({ error: err.message }));
+        req.write(body);
+        req.end();
+      });
+    };
+
+    const result = await fb.chatbotMarketplace(_page, { instructions, generateResponse });
+    return await handleMarketplaceResult(result, profileId);
   } catch (err) { return { error: err.message }; }
 });
 
@@ -1534,7 +1616,8 @@ ipcMain.handle('fb:marketplace-contact', async (_, profileId, query, message, op
     if (!_entry?.context) return { error: 'Browser not running' };
     const _page = _entry.context.pages()[0];
     if (!_page) return { error: 'No page available' };
-    return await fb.contactMarketplaceSellers(_page, query, message, options);
+    const result = await fb.contactMarketplaceSellers(_page, query, message, options);
+    return await handleMarketplaceResult(result, profileId);
   } catch (err) { return { error: err.message }; }
 });
 
@@ -1809,8 +1892,9 @@ ipcMain.handle('fb:run-automation', async (_, profileId, actionId, config) => {
     if (!_page) return { error: 'No page available' };
     const fb = require('./src/browser/automations');
     const page = _page;
+    let result;
     switch (actionId) {
-      case 'mp-create': return await fb.marketplaceCreateListing(page, config);
+      case 'mp-create': result = await fb.marketplaceCreateListing(page, config); break;
       case 'like': return await fb.likePosts(page, config.likeTargetUrl || 'https://facebook.com', config.maxLikes || 10);
       case 'comment': return await fb.commentOnPosts(page, config.commentTargetUrl || 'https://facebook.com', (config.comments || '').split('\n'), config.maxComments || 5);
       case 'dm-send': return await fb.sendMessage(page, config.dmRecipient, config.dmMessage);
@@ -1820,5 +1904,6 @@ ipcMain.handle('fb:run-automation', async (_, profileId, actionId, config) => {
       case 'warmup': return await fb.warmupAccount(page, config);
       default: return { error: `Unknown action: ${actionId}` };
     }
+    return await handleMarketplaceResult(result, profileId);
   } catch (err) { return { error: err.message }; }
 });

@@ -40,7 +40,7 @@ export default function Marketplace({ tier }) {
   const [scrapeCurrFilter, setScrapeCurrFilter] = useState('all');
   const [contactForm, setContactForm] = useState({ query: '', message: '', maxContacts: 10, delayMin: 15, delayMax: 45, directLinks: '' });
   const [repostForm, setRepostForm] = useState({ listingUrl: '' });
-  const [autoreplyForm, setAutoreplyForm] = useState({ template: '' });
+  const [autoreplyForm, setAutoreplyForm] = useState({ template: '', mode: 'chatbot', instructions: '' });
   const [aiLoading, setAiLoading] = useState(false);
 
   // AI: vary title
@@ -320,20 +320,43 @@ export default function Marketplace({ tier }) {
     setRunning(false);
   };
 
-  // ── Auto-Reply ──
+  // ── Auto-Reply / Chatbot ──
   const handleAutoreply = async () => {
-    if (!autoreplyForm.template || selectedProfiles.length === 0) return;
+    if (selectedProfiles.length === 0) return;
+    if (autoreplyForm.mode === 'template' && !autoreplyForm.template) return;
     setRunning(true);
     const readyIds = await ensureBrowsersOpen(selectedProfiles);
     if (readyIds.length === 0) { setRunning(false); addLog('No se pudieron abrir navegadores', 'error'); return; }
-    addLog(`Auto-respondiendo mensajes...`);
-    for (const pid of readyIds) {
-      try {
-        const result = await window.api.fbMarketplaceAutoreply(pid, autoreplyForm.template);
-        if (result?.error) addLog(`Error: ${result.error}`, 'error');
-        else addLog(`Respondidos: ${result.replied || 0} mensajes`, 'done');
-      } catch (err) {
-        addLog(`Error: ${err?.message || err}`, 'error');
+
+    if (autoreplyForm.mode === 'chatbot') {
+      addLog(`Chatbot IA activado — procesando conversaciones...`);
+      for (const pid of readyIds) {
+        try {
+          const pName = profiles.find(p => p.id === pid)?.name || pid;
+          const result = await window.api.fbMarketplaceChatbot(pid, autoreplyForm.instructions || '');
+          if (result?.error) addLog(`${pName}: ${result.error}`, 'error');
+          else if (result?.message) addLog(`${pName}: ${result.message}`, 'warning');
+          else if (result.replied === 0 && result.skipped === 0 && result.errors === 0) addLog(`${pName}: No hay mensajes sin responder`, 'warning');
+          else if (result.replied === 0) addLog(`${pName}: No hay mensajes pendientes (${result.skipped} ya respondidos)`, 'warning');
+          else addLog(`${pName}: ${result.replied} respondidos | ${result.skipped} omitidos | ${result.errors} errores`, 'done');
+        } catch (err) {
+          addLog(`Error: ${err?.message || err}`, 'error');
+        }
+      }
+    } else {
+      addLog(`Auto-respondiendo con template...`);
+      for (const pid of readyIds) {
+        try {
+          const pName2 = profiles.find(p => p.id === pid)?.name || pid;
+          const result = await window.api.fbMarketplaceAutoreply(pid, autoreplyForm.template);
+          if (result?.error) addLog(`${pName2}: ${result.error}`, 'error');
+          else if (result?.message) addLog(`${pName2}: ${result.message}`, 'warning');
+          else if (result.replied === 0 && result.skipped === 0 && result.errors === 0) addLog(`${pName2}: No hay mensajes sin responder`, 'warning');
+          else if (result.replied === 0) addLog(`${pName2}: No hay mensajes pendientes (${result.skipped} ya respondidos)`, 'warning');
+          else addLog(`${pName2}: ${result.replied} respondidos | ${result.skipped} omitidos | ${result.errors} errores`, 'done');
+        } catch (err) {
+          addLog(`Error: ${err?.message || err}`, 'error');
+        }
       }
     }
     setRunning(false);
@@ -598,9 +621,42 @@ export default function Marketplace({ tier }) {
               <div>
                 <h3 className="text-sm font-semibold text-trust-dark mb-3">💬 Auto-Responder Marketplace</h3>
                 <p className="text-xs text-trust-muted mb-3">Responde automaticamente a mensajes de compradores en tus listings</p>
-                <div><label className={LABEL_CLASS}>Template de respuesta</label><textarea value={autoreplyForm.template} onChange={e => setAutoreplyForm(p => ({...p, template: e.target.value}))} rows={3} placeholder="Hola! Si, esta disponible. El precio es firme. Te interesa?" className={INPUT_CLASS + ' resize-none'} /></div>
-                <button onClick={handleAutoreply} disabled={running || !autoreplyForm.template || selectedProfiles.length === 0} className={BTN_PRIMARY + ' mt-4'}>
-                  {running ? 'Respondiendo...' : `Ejecutar en ${selectedProfiles.length} perfil(es)`}
+
+                {/* Mode selector */}
+                <div className="flex gap-1 mb-4 bg-trust-surface rounded-lg p-0.5">
+                  <button onClick={() => setAutoreplyForm(p => ({...p, mode: 'chatbot'}))}
+                    className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${autoreplyForm.mode === 'chatbot' ? 'bg-purple-600 text-white shadow-sm' : 'text-trust-muted hover:text-trust-dark'}`}>
+                    Chatbot IA
+                  </button>
+                  <button onClick={() => setAutoreplyForm(p => ({...p, mode: 'template'}))}
+                    className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${autoreplyForm.mode === 'template' ? 'bg-blue-600 text-white shadow-sm' : 'text-trust-muted hover:text-trust-dark'}`}>
+                    Template fijo
+                  </button>
+                </div>
+
+                {autoreplyForm.mode === 'chatbot' ? (
+                  <div>
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-3">
+                      <p className="text-xs text-purple-700 font-medium mb-1">Chatbot con IA</p>
+                      <p className="text-[10px] text-purple-600">Lee los mensajes del comprador, entiende el contexto del producto y genera respuestas inteligentes con Claude. Solo responde conversaciones sin contestar.</p>
+                    </div>
+                    <label className={LABEL_CLASS}>Instrucciones personalizadas (opcional)</label>
+                    <textarea value={autoreplyForm.instructions} onChange={e => setAutoreplyForm(p => ({...p, instructions: e.target.value}))} rows={4}
+                      placeholder={"Eres un vendedor amigable. Responde en espanol.\n- Si preguntan disponibilidad, di que si.\n- Precio firme, pero acepta ofertas razonables.\n- Para entrega, pregunta ubicacion del comprador.\n- Maximo 2 oraciones, suena natural."}
+                      className={INPUT_CLASS + ' resize-none'} />
+                    <p className="text-[10px] text-trust-muted mt-1">Si lo dejas vacio, usara instrucciones por defecto optimizadas para ventas.</p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className={LABEL_CLASS}>Template de respuesta</label>
+                    <textarea value={autoreplyForm.template} onChange={e => setAutoreplyForm(p => ({...p, template: e.target.value}))} rows={3} placeholder="Hola! Si, esta disponible. El precio es firme. Te interesa?" className={INPUT_CLASS + ' resize-none'} />
+                  </div>
+                )}
+
+                <button onClick={handleAutoreply}
+                  disabled={running || (autoreplyForm.mode === 'template' && !autoreplyForm.template) || selectedProfiles.length === 0}
+                  className={(autoreplyForm.mode === 'chatbot' ? 'px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-40' : BTN_PRIMARY) + ' mt-4'}>
+                  {running ? (autoreplyForm.mode === 'chatbot' ? 'Chatbot procesando...' : 'Respondiendo...') : `${autoreplyForm.mode === 'chatbot' ? 'Activar Chatbot' : 'Ejecutar'} en ${selectedProfiles.length} perfil(es)`}
                 </button>
               </div>
             )}

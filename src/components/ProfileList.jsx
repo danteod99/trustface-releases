@@ -29,6 +29,8 @@ export default function ProfileList({ tier, onUpgrade }) {
   const [batchProgress, setBatchProgress] = useState(null);
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [editingNote, setEditingNote] = useState(null); // profile id being edited
+  const [noteText, setNoteText] = useState('');
 
   const loadProfiles = async () => {
     const data = await window.api.listProfiles();
@@ -57,6 +59,12 @@ export default function ProfileList({ tier, onUpgrade }) {
 
     return () => clearInterval(interval);
   }, []);
+
+  const saveNote = async (profileId) => {
+    await window.api.updateProfile(profileId, { notes: noteText });
+    setEditingNote(null);
+    loadProfiles();
+  };
 
   const handleLaunch = async (id) => {
     setLoading((prev) => ({ ...prev, [id]: true }));
@@ -517,6 +525,25 @@ export default function ProfileList({ tier, onUpgrade }) {
                   <div className="text-trust-muted text-xs">
                     {profile.proxy_host ? `${profile.proxy_type}://${profile.proxy_host}:${profile.proxy_port}` : 'Sin proxy'} · {profile.timezone}
                   </div>
+                  {/* Notes */}
+                  {editingNote === profile.id ? (
+                    <div className="flex gap-1.5 items-start">
+                      <textarea value={noteText} onChange={e => setNoteText(e.target.value)} rows={2} autoFocus
+                        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNote(profile.id); } if (e.key === 'Escape') setEditingNote(null); }}
+                        placeholder="Escribe una nota..."
+                        className="flex-1 text-xs bg-trust-surface border border-trust-border rounded-lg px-2 py-1.5 text-trust-dark focus:outline-none focus:border-blue-500 resize-none" />
+                      <button onClick={() => saveNote(profile.id)} className="px-2 py-1.5 bg-trust-accent text-white rounded-lg text-[10px] font-medium hover:bg-trust-accent-hover">OK</button>
+                      <button onClick={() => setEditingNote(null)} className="px-2 py-1.5 text-trust-muted text-[10px] hover:text-trust-dark">X</button>
+                    </div>
+                  ) : (
+                    <div className="cursor-pointer group" onClick={() => { setEditingNote(profile.id); setNoteText(profile.notes || ''); }}>
+                      {profile.notes ? (
+                        <p className="text-xs text-trust-muted bg-trust-surface/60 rounded px-2 py-1 group-hover:bg-trust-surface">{profile.notes}</p>
+                      ) : (
+                        <p className="text-[10px] text-trust-muted/50 group-hover:text-trust-muted">+ Agregar nota</p>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   {running ? (

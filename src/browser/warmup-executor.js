@@ -1,4 +1,4 @@
-const { getActiveBrowsers } = require('./manager');
+const { getActiveBrowsers, closeBrowser } = require('./manager');
 
 // ─── 14-Day Warm-up Plan ─────────────────────────────────────────
 // Gradual increase in daily actions to simulate organic Facebook growth
@@ -55,19 +55,28 @@ function getPage(profileId) {
 
 // ─── Helper: wait until page is ready (loaded + logged in) ───────
 
-async function waitForPageReady(profileId, maxWaitMs = 30000) {
+async function waitForPageReady(profileId, maxWaitMs = 60000) {
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
     const page = getPage(profileId);
     if (page) {
       try {
         const url = page.url();
-        if (url.includes('facebook.com') && !url.includes('/login') && !url.includes('checkpoint')) {
-          return page;
+        if (url.includes('facebook.com') && !url.includes('/login') && !url.includes('checkpoint') && !url.includes('two_factor') && !url.includes('two_step')) {
+          // Also check no captcha is blocking
+          const hasCaptcha = await page.evaluate(() => {
+            return !!(
+              document.querySelector('iframe[src*="arkoselabs"], iframe[src*="funcaptcha"]') ||
+              document.querySelector('iframe[src*="recaptcha"], iframe[src*="hcaptcha"]') ||
+              document.querySelector('#captcha-container, [data-testid="captcha"]')
+            );
+          }).catch(() => false);
+          if (!hasCaptcha) return page;
+          console.log(`[Warmup] ${profileId}: captcha detected — waiting...`);
         }
       } catch { /* page not ready yet */ }
     }
-    await sleep(2000);
+    await sleep(3000);
   }
   return null;
 }
@@ -180,6 +189,80 @@ async function warmupAddFriends(page, maxFriends) {
   return added;
 }
 
+async function warmupJoinGroups(page, maxGroups) {
+  let joined = 0;
+  try {
+    await page.goto('https://www.facebook.com/groups/discover/', { waitUntil: 'load', timeout: 20000 });
+    await page.waitForTimeout(randomDelay(3000, 5000));
+
+    for (let i = 0; i < maxGroups; i++) {
+      try {
+        // Scroll to find more groups
+        await page.evaluate(() => window.scrollBy(0, 300));
+        await page.waitForTimeout(randomDelay(1500, 3000));
+
+        const joinBtn = page.locator('div[aria-label="Join group"], div[aria-label="Unirse al grupo"], div[role="button"]:has-text("Join"), div[role="button"]:has-text("Unirse"), a[role="button"]:has-text("Join"), a[role="button"]:has-text("Unirse")').first();
+        if (await joinBtn.isVisible({ timeout: 3000 })) {
+          await joinBtn.click();
+          joined++;
+          console.log(`[Warmup] Joined group ${joined}/${maxGroups}`);
+          await page.waitForTimeout(randomDelay(5000, 12000));
+        }
+      } catch { /* skip */ }
+    }
+  } catch (err) {
+    console.log(`[Warmup] joinGroups error: ${err.message}`);
+  }
+  return joined;
+}
+
+async function warmupCreatePost(page) {
+  try {
+    await page.goto('https://www.facebook.com/', { waitUntil: 'load', timeout: 20000 });
+    await page.waitForTimeout(randomDelay(2000, 4000));
+
+    // Click on "What's on your mind?" to open post composer
+    const postBox = page.locator('[aria-label*="que estas pensando"], [aria-label*="What\'s on your mind"], [role="button"]:has-text("que estas pensando"), [role="button"]:has-text("What\'s on your mind")').first();
+    if (!(await postBox.isVisible({ timeout: 3000 }))) {
+      console.log(`[Warmup] Post box not found`);
+      return 0;
+    }
+    await postBox.click();
+    await page.waitForTimeout(randomDelay(2000, 3000));
+
+    // Simple status updates to look organic
+    const posts = [
+      'Buen dia!', 'Feliz dia a todos', 'Que tengan un excelente dia',
+      'Buenas vibras para todos hoy', 'Hoy es un gran dia',
+      'Saludos a todos!', 'Que bonito dia', 'Bendiciones para todos',
+      'Buenos dias amigos', 'Un abrazo a todos',
+      'Good morning!', 'Have a great day everyone', 'Hello world',
+      'Feeling good today', 'Great vibes today',
+    ];
+    const text = posts[Math.floor(Math.random() * posts.length)];
+
+    // Type into the post editor
+    const editor = page.locator('[contenteditable="true"][role="textbox"], [contenteditable="true"][aria-label*="que estas pensando"], [contenteditable="true"][aria-label*="What\'s on your mind"]').first();
+    if (await editor.isVisible({ timeout: 3000 })) {
+      await editor.click();
+      await editor.type(text, { delay: randomDelay(30, 80) });
+      await page.waitForTimeout(randomDelay(1000, 2000));
+
+      // Click publish button
+      const publishBtn = page.locator('div[aria-label="Post"], div[aria-label="Publicar"], div[role="button"]:has-text("Post"), div[role="button"]:has-text("Publicar")').first();
+      if (await publishBtn.isVisible({ timeout: 3000 })) {
+        await publishBtn.click();
+        await page.waitForTimeout(randomDelay(3000, 5000));
+        console.log(`[Warmup] Posted: "${text}"`);
+        return 1;
+      }
+    }
+  } catch (err) {
+    console.log(`[Warmup] createPost error: ${err.message}`);
+  }
+  return 0;
+}
+
 // ─── Execute Warm-up for a Single Profile ────────────────────────
 
 async function executeWarmupForProfile(db, warmup) {
@@ -190,11 +273,13 @@ async function executeWarmupForProfile(db, warmup) {
   const dayPlan = WARMUP_PLAN[warmup.day];
   if (!dayPlan) return;
 
-  // Reuse DB columns: likes=likes, follows=friends, stories=browsing, comments=groups
+  // DB columns mapping: today_likes=likes, today_follows=friends, today_stories=posts, today_comments=groups
   const remainingLikes = Math.max(0, dayPlan.likes - (warmup.today_likes || 0));
   const remainingFriends = Math.max(0, dayPlan.friends - (warmup.today_follows || 0));
+  const remainingPosts = Math.max(0, dayPlan.posts - (warmup.today_stories || 0));
+  const remainingGroups = Math.max(0, dayPlan.groups - (warmup.today_comments || 0));
 
-  if (remainingLikes === 0 && remainingFriends === 0) return;
+  if (remainingLikes === 0 && remainingFriends === 0 && remainingPosts === 0 && remainingGroups === 0) return;
 
   const page = await waitForPageReady(profileId);
   if (!page) {
@@ -209,37 +294,66 @@ async function executeWarmupForProfile(db, warmup) {
       type: 'warmup',
       day: warmup.day,
       plan: dayPlan,
-      remaining: { likes: remainingLikes, friends: remainingFriends },
+      remaining: { likes: remainingLikes, friends: remainingFriends, posts: remainingPosts, groups: remainingGroups },
     });
 
-    console.log(`[Warmup] ${profileId}: Day ${warmup.day} — executing batch (likes: ${remainingLikes}, friends: ${remainingFriends})`);
+    console.log(`[Warmup] ${profileId}: Day ${warmup.day} — executing full session (likes: ${remainingLikes}, friends: ${remainingFriends}, posts: ${remainingPosts}, groups: ${remainingGroups})`);
 
     // ── Step 1: Browse feed naturally ──
     await warmupBrowseFeed(page);
     await sleep(randomDelay(5000, 15000));
 
-    // ── Step 2: Like feed posts ──
+    // ── Step 2: Like feed posts (all for today) ──
     if (remainingLikes > 0) {
-      const batchLikes = Math.min(remainingLikes, randomDelay(3, 6));
-      const actualLikes = await warmupLikeFeed(page, batchLikes);
+      const actualLikes = await warmupLikeFeed(page, remainingLikes);
       if (actualLikes > 0) {
         db.prepare(
           "UPDATE warmup_status SET today_likes = today_likes + ?, last_action = datetime('now') WHERE profile_id = ?"
         ).run(actualLikes, profileId);
         emitWarmup(profileId, 'progress', { type: 'warmup', action: 'likes', done: actualLikes, day: warmup.day });
       }
-      await sleep(randomDelay(30000, 90000));
+      await sleep(randomDelay(15000, 40000));
     }
 
-    // ── Step 3: Add friends from suggestions ──
+    // ── Step 3: Add friends from suggestions (all for today) ──
     if (remainingFriends > 0) {
-      const batchFriends = Math.min(remainingFriends, randomDelay(1, 3));
-      const actualFriends = await warmupAddFriends(page, batchFriends);
+      const actualFriends = await warmupAddFriends(page, remainingFriends);
       if (actualFriends > 0) {
         db.prepare(
           "UPDATE warmup_status SET today_follows = today_follows + ?, last_action = datetime('now') WHERE profile_id = ?"
         ).run(actualFriends, profileId);
         emitWarmup(profileId, 'progress', { type: 'warmup', action: 'friends', done: actualFriends, day: warmup.day });
+      }
+      await sleep(randomDelay(15000, 40000));
+    }
+
+    // ── Step 4: Join groups (all for today) ──
+    if (remainingGroups > 0) {
+      const actualGroups = await warmupJoinGroups(page, remainingGroups);
+      if (actualGroups > 0) {
+        db.prepare(
+          "UPDATE warmup_status SET today_comments = today_comments + ?, last_action = datetime('now') WHERE profile_id = ?"
+        ).run(actualGroups, profileId);
+        emitWarmup(profileId, 'progress', { type: 'warmup', action: 'groups', done: actualGroups, day: warmup.day });
+      }
+      await sleep(randomDelay(15000, 40000));
+    }
+
+    // ── Step 5: Create posts (all for today) ──
+    if (remainingPosts > 0) {
+      let totalPosts = 0;
+      for (let i = 0; i < remainingPosts; i++) {
+        const posted = await warmupCreatePost(page);
+        totalPosts += posted;
+        if (posted > 0 && i < remainingPosts - 1) {
+          await sleep(randomDelay(30000, 60000));
+        }
+      }
+      if (totalPosts > 0) {
+        db.prepare(
+          "UPDATE warmup_status SET today_stories = today_stories + ?, last_action = datetime('now') WHERE profile_id = ?"
+        ).run(totalPosts, profileId);
+        emitWarmup(profileId, 'progress', { type: 'warmup', action: 'posts', done: totalPosts, day: warmup.day });
       }
     }
 
@@ -247,16 +361,23 @@ async function executeWarmupForProfile(db, warmup) {
       "UPDATE warmup_status SET last_action = datetime('now') WHERE profile_id = ?"
     ).run(profileId);
 
-    console.log(`[Warmup] ${profileId}: Day ${warmup.day} batch completed`);
+    console.log(`[Warmup] ${profileId}: Day ${warmup.day} batch completed — closing browser`);
     emitWarmup(profileId, 'done', {
       type: 'warmup-batch',
       day: warmup.day,
-      message: `Batch de warm-up dia ${warmup.day} ejecutado`,
+      message: `Batch de warm-up dia ${warmup.day} ejecutado — cerrando navegador`,
+    });
+
+    // Close browser after completing the day's actions
+    await closeBrowser(profileId).catch((err) => {
+      console.log(`[Warmup] Error closing browser for ${profileId}: ${err.message}`);
     });
 
   } catch (err) {
     console.log(`[Warmup] Error general para ${profileId}:`, err.message);
     emitWarmup(profileId, 'error', { type: 'warmup', error: err.message });
+    // Also close browser on error to avoid leaving orphan windows
+    await closeBrowser(profileId).catch(() => {});
   } finally {
     processingProfiles.delete(profileId);
   }
@@ -273,13 +394,33 @@ async function warmupTick() {
 
     if (activeWarmups.length === 0) return;
 
+    const today = todayDateStr();
+
     console.log(`[Warmup] Tick: ${activeWarmups.length} active warmups`);
 
     for (const warmup of activeWarmups) {
       const updated = checkAndAdvanceDay(db, warmup);
       if (!updated) continue;
 
-      await sleep(randomDelay(15000, 45000));
+      // Skip if already executed today (last_action date matches today)
+      const lastActionDate = updated.last_action ? updated.last_action.slice(0, 10) : null;
+      if (lastActionDate === today) {
+        const dayPlan = WARMUP_PLAN[updated.day];
+        if (dayPlan) {
+          const doneLikes = updated.today_likes || 0;
+          const doneFriends = updated.today_follows || 0;
+          const donePosts = updated.today_stories || 0;
+          const doneGroups = updated.today_comments || 0;
+          if (doneLikes >= dayPlan.likes && doneFriends >= dayPlan.friends &&
+              donePosts >= dayPlan.posts && doneGroups >= dayPlan.groups) {
+            console.log(`[Warmup] ${updated.profile_id}: Day ${updated.day} already completed today — skipping`);
+            continue;
+          }
+        }
+      }
+
+      // Stagger profiles so they don't all hit Facebook at the same time
+      await sleep(randomDelay(10000, 30000));
 
       await executeWarmupForProfile(db, updated);
     }
@@ -294,7 +435,7 @@ function startWarmupExecutor(getDbFn, onEventFn) {
   dbGetter = getDbFn;
   eventCallback = onEventFn || null;
 
-  console.log('[Warmup] Executor iniciado - verificacion cada 5 minutos');
+  console.log('[Warmup] Executor iniciado - sesion completa 1 vez al dia, verificacion cada 5 min');
   setTimeout(() => warmupTick(), 30000);
   intervalRef = setInterval(warmupTick, 5 * 60 * 1000);
 }

@@ -17,6 +17,9 @@ let capsolverApiKey = '';
 // Mobile-sized windows arranged in a grid so multiple are visible at once
 const BROWSER_WIDTH = 360;
 const BROWSER_HEIGHT = 640;
+// Chrome window chrome (title bar + borders) adds extra pixels around the viewport
+const WINDOW_CHROME_WIDTH = 0;   // side borders are negligible on macOS
+const WINDOW_CHROME_HEIGHT = 78; // title bar + tab bar overhead
 const GRID_PADDING = 5;
 const GRID_START_X = 230; // offset to avoid overlapping the Electron sidebar
 const GRID_START_Y = 0;
@@ -26,12 +29,14 @@ function getNextGridPosition() {
   // Calculate how many columns fit on screen (assume ~1440px wide screen)
   const screenWidth = 1440;
   const usableWidth = screenWidth - GRID_START_X;
-  const cols = Math.max(1, Math.floor(usableWidth / (BROWSER_WIDTH + GRID_PADDING)));
+  const winW = BROWSER_WIDTH + WINDOW_CHROME_WIDTH;
+  const winH = BROWSER_HEIGHT + WINDOW_CHROME_HEIGHT;
+  const cols = Math.max(1, Math.floor(usableWidth / (winW + GRID_PADDING)));
   const col = count % cols;
   const row = Math.floor(count / cols);
   return {
-    x: GRID_START_X + col * (BROWSER_WIDTH + GRID_PADDING),
-    y: GRID_START_Y + row * (BROWSER_HEIGHT + GRID_PADDING + 30), // +30 for title bar
+    x: GRID_START_X + col * (winW + GRID_PADDING),
+    y: GRID_START_Y + row * (winH + GRID_PADDING),
   };
 }
 
@@ -668,17 +673,34 @@ async function launchBrowser(profile) {
   // Set up ban detection monitor on all pages (catches post-login bans)
   setupBanMonitor(context, profile);
 
-  // Position the browser window in a grid layout
+  // Position the browser window and resize to fit viewport exactly
   try {
     const pos = getNextGridPosition();
     const page = context.pages()[0];
     if (page) {
-      // Use CDP to position the window
       const cdp = await context.newCDPSession(page);
+      const { windowId } = await cdp.send('Browser.getWindowForTarget');
+
+      // First position and set initial size
       await cdp.send('Browser.setWindowBounds', {
-        windowId: (await cdp.send('Browser.getWindowForTarget')).windowId,
+        windowId,
         bounds: { left: pos.x, top: pos.y, width: BROWSER_WIDTH, height: BROWSER_HEIGHT, windowState: 'normal' },
       });
+
+      // Measure actual viewport vs window to calculate chrome overhead
+      await page.waitForTimeout(500);
+      const innerSize = await page.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+      const chromeW = BROWSER_WIDTH - innerSize.w;
+      const chromeH = BROWSER_HEIGHT - innerSize.h;
+
+      if (chromeW > 0 || chromeH > 0) {
+        // Resize to compensate for chrome (title bar, borders)
+        await cdp.send('Browser.setWindowBounds', {
+          windowId,
+          bounds: { width: BROWSER_WIDTH + chromeW, height: BROWSER_HEIGHT + chromeH },
+        });
+        console.log(`[Browser] Ventana ajustada: chrome overhead ${chromeW}x${chromeH}px`);
+      }
       console.log(`[Browser] Ventana posicionada en grid: (${pos.x}, ${pos.y})`);
     }
   } catch (err) {
@@ -785,6 +807,51 @@ async function launchBrowser(profile) {
 
         await page.waitForTimeout(5000);
         console.log(`[FB Login] Login attempt done for ${profile.name}`);
+
+        // ── Detect and wait for CAPTCHA resolution ──
+        const hasCaptcha = await page.evaluate(() => {
+          return !!(
+            document.querySelector('iframe[src*="arkoselabs"], iframe[src*="funcaptcha"], iframe[data-e2e="enforcement-frame"]') ||
+            document.querySelector('iframe[src*="recaptcha/api2"], iframe[src*="recaptcha/enterprise"]') ||
+            document.querySelector('iframe[src*="hcaptcha.com"]') ||
+            document.querySelector('#captcha-container, #captcha_challenge, [data-testid="captcha"]') ||
+            document.querySelector('.g-recaptcha, .h-captcha')
+          );
+        }).catch(() => false);
+
+        if (hasCaptcha) {
+          console.log(`[FB Login] CAPTCHA detected for ${profile.name} — waiting for CapSolver to resolve (up to 120s)...`);
+          // Wait for captcha to disappear (CapSolver extension handles it)
+          for (let cWait = 0; cWait < 60; cWait++) {
+            await page.waitForTimeout(2000);
+            const stillCaptcha = await page.evaluate(() => {
+              return !!(
+                document.querySelector('iframe[src*="arkoselabs"], iframe[src*="funcaptcha"], iframe[data-e2e="enforcement-frame"]') ||
+                document.querySelector('iframe[src*="recaptcha/api2"], iframe[src*="recaptcha/enterprise"]') ||
+                document.querySelector('iframe[src*="hcaptcha.com"]') ||
+                document.querySelector('#captcha-container, #captcha_challenge, [data-testid="captcha"]') ||
+                document.querySelector('.g-recaptcha, .h-captcha')
+              );
+            }).catch(() => false);
+
+            if (!stillCaptcha) {
+              console.log(`[FB Login] CAPTCHA resolved for ${profile.name} after ${(cWait + 1) * 2}s`);
+              await page.waitForTimeout(3000);
+              break;
+            }
+
+            // Check if page navigated away (captcha solved and login proceeded)
+            const curUrl = page.url();
+            if (curUrl.includes('facebook.com') && !curUrl.includes('login') && !curUrl.includes('checkpoint')) {
+              console.log(`[FB Login] Page navigated during CAPTCHA wait — login may have succeeded`);
+              break;
+            }
+
+            if (cWait % 10 === 9) {
+              console.log(`[FB Login] Still waiting for CAPTCHA... (${(cWait + 1) * 2}s)`);
+            }
+          }
+        }
 
         // ── Detect page state after login attempt ──
         let state = 'waiting';

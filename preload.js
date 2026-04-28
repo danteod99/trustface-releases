@@ -124,6 +124,7 @@ contextBridge.exposeInMainWorld('api', {
   fbMarketplaceScrape: (profileId, query, max) => ipcRenderer.invoke('fb:marketplace-scrape', profileId, query, max),
   fbMarketplaceDeepScrape: (profileId, query, max) => ipcRenderer.invoke('fb:marketplace-deep-scrape', profileId, query, max),
   fbMarketplaceAutoreply: (profileId, template) => ipcRenderer.invoke('fb:marketplace-autoreply', profileId, template),
+  fbMarketplaceChatbot: (profileId, instructions) => ipcRenderer.invoke('fb:marketplace-chatbot', profileId, instructions),
   fbMarketplaceContact: (profileId, query, message, opts) => ipcRenderer.invoke('fb:marketplace-contact', profileId, query, message, opts),
   fbSendDM: (profileId, recipient, msg) => ipcRenderer.invoke('fb:send-dm', profileId, recipient, msg),
   fbMassDM: (profileId, recipients, templates, opts) => ipcRenderer.invoke('fb:mass-dm', profileId, recipients, templates, opts),
