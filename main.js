@@ -265,15 +265,41 @@ app.whenReady().then(() => {
   // Auto-Updater
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.on('update-available', (info) => { if (mainWindow) mainWindow.webContents.send('updater:update-available', { version: info.version }); });
-  autoUpdater.on('download-progress', (progress) => { if (mainWindow) mainWindow.webContents.send('updater:download-progress', { percent: progress.percent }); });
-  autoUpdater.on('update-downloaded', (info) => { if (mainWindow) mainWindow.webContents.send('updater:update-downloaded', { version: info.version }); });
-  autoUpdater.on('error', (err) => { console.error('Updater error:', err.message); if (mainWindow) mainWindow.webContents.send('updater:error', { error: err.message }); });
-  if (app.isPackaged) { setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 3000); }
+  autoUpdater.forceDevUpdateConfig = false;
+  autoUpdater.on('update-available', (info) => {
+    console.log(`[Updater] Update available: v${info.version}`);
+    if (mainWindow) mainWindow.webContents.send('updater:update-available', { version: info.version });
+  });
+  autoUpdater.on('download-progress', (progress) => {
+    console.log(`[Updater] Download: ${Math.round(progress.percent)}%`);
+    if (mainWindow) mainWindow.webContents.send('updater:download-progress', { percent: progress.percent });
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log(`[Updater] Downloaded v${info.version} — ready to install`);
+    console.log(`[Updater] App path: ${app.getAppPath()}`);
+    console.log(`[Updater] App location: ${app.getPath('exe')}`);
+    if (mainWindow) mainWindow.webContents.send('updater:update-downloaded', { version: info.version });
+  });
+  autoUpdater.on('error', (err) => {
+    console.error(`[Updater] Error: ${err.message}`);
+    console.error(`[Updater] Stack: ${err.stack}`);
+    if (mainWindow) mainWindow.webContents.send('updater:error', { error: err.message });
+  });
+  if (app.isPackaged) { setTimeout(() => autoUpdater.checkForUpdates().catch((e) => console.error('[Updater] Check error:', e.message)), 3000); }
   ipcMain.handle('updater:check', async () => { try { const r = await autoUpdater.checkForUpdates(); return { success: true, updateInfo: r?.updateInfo }; } catch (e) { return { success: false, error: e.message }; } });
   ipcMain.handle('updater:download', async () => { try { await autoUpdater.downloadUpdate(); return { success: true }; } catch (e) { return { success: false, error: e.message }; } });
   ipcMain.handle('updater:install', () => {
-    setImmediate(() => {
+    console.log('[Updater] Installing update — closing all windows and browsers...');
+    setImmediate(async () => {
+      // Close all active browsers first to avoid orphan processes
+      try {
+        const activeBrowsers = getActiveBrowsers();
+        for (const [id] of activeBrowsers) {
+          await closeBrowser(id).catch(() => {});
+        }
+        console.log('[Updater] All browsers closed');
+      } catch {}
+
       app.removeAllListeners('window-all-closed');
       app.removeAllListeners('before-quit');
       const windows = BrowserWindow.getAllWindows();
@@ -281,7 +307,10 @@ app.whenReady().then(() => {
         w.removeAllListeners('close');
         w.destroy();
       });
-      autoUpdater.quitAndInstall(true, true);
+
+      console.log('[Updater] Calling quitAndInstall...');
+      // isSilent=false so it shows the installer, isForceRunAfter=true to relaunch
+      autoUpdater.quitAndInstall(false, true);
     });
   });
 
