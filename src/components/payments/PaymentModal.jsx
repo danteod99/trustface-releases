@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 const plans = [
-  { id: 'face-monthly', name: 'TrustFace Pro', price: 99, period: '/mes', savings: null, product: 'trustface', badge: 'Facebook' },
-  { id: 'face-quarterly', name: 'TrustFace Pro', price: 229, period: '/3 meses', savings: 'Ahorra 23%', product: 'trustface', badge: 'Facebook' },
-  { id: 'face-yearly', name: 'TrustFace Pro', price: 599, period: '/ano', savings: 'Ahorra 50%', product: 'trustface', badge: 'Facebook' },
-  { id: 'bundle-monthly', name: 'Trust Bundle', price: 149, period: '/mes', savings: 'Insta + Face', product: 'bundle', badge: 'Todo incluido', highlight: true },
-  { id: 'bundle-quarterly', name: 'Trust Bundle', price: 349, period: '/3 meses', savings: 'Ahorra 22%', product: 'bundle', badge: 'Todo incluido', highlight: true },
-  { id: 'bundle-yearly', name: 'Trust Bundle', price: 899, period: '/ano', savings: 'Ahorra 50%', product: 'bundle', badge: 'Todo incluido', highlight: true },
+  { id: 'face-monthly', name: 'TrustFace Pro', price: 29, period: '/mes', savings: null, product: 'trustface', badge: 'Facebook' },
+  { id: 'face-quarterly', name: 'TrustFace Pro', price: 69, period: '/3 meses', savings: 'Ahorra 21%', product: 'trustface', badge: 'Facebook' },
+  { id: 'face-yearly', name: 'TrustFace Pro', price: 199, period: '/ano', savings: 'Ahorra 43%', product: 'trustface', badge: 'Facebook' },
+  { id: 'bundle-monthly', name: 'Trust Bundle', price: 49, period: '/mes', savings: 'Insta + Face', product: 'bundle', badge: 'Todo incluido', highlight: true },
+  { id: 'bundle-quarterly', name: 'Trust Bundle', price: 119, period: '/3 meses', savings: 'Ahorra 19%', product: 'bundle', badge: 'Todo incluido', highlight: true },
+  { id: 'bundle-yearly', name: 'Trust Bundle', price: 349, period: '/ano', savings: 'Ahorra 41%', product: 'bundle', badge: 'Todo incluido', highlight: true },
 ];
 
 const networks = [

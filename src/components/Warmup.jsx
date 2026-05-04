@@ -41,6 +41,7 @@ export default function Warmup({ tier, onUpgrade }) {
   const [viewMode, setViewMode] = useState('list'); // 'list' or 'cards'
   const [logs, setLogs] = useState([]);
   const logRef = useRef(null);
+  const [filter, setFilter] = useState('all');
 
   const addLog = (msg, type = 'info') => {
     setLogs(prev => [...prev.slice(-150), { time: new Date().toLocaleTimeString(), msg, type }]);
@@ -195,6 +196,20 @@ export default function Warmup({ tier, onUpgrade }) {
     const ws = warmupStatus[p.id];
     return ws && (ws.day > 14 || ws.completed);
   }).length;
+  const bannedCount = profiles.filter(p => p.account_status === 'banned' || p.account_status === 'facial_verify' || p.account_status === 'challenge' || p.account_status === 'wrong_password' || p.account_status === 'email_verify').length;
+  const sessionCount = profiles.filter(p => p.fb_logged_in).length;
+
+  // Apply filter
+  const filteredProfiles = profiles.filter(p => {
+    const ws = warmupStatus[p.id] || {};
+    if (filter === 'active') return ws.active;
+    if (filter === 'inactive') return !ws.active && !(ws.day > 14 || ws.completed);
+    if (filter === 'completed') return ws.day > 14 || ws.completed;
+    if (filter === 'session') return p.fb_logged_in;
+    if (filter === 'no-session') return !p.fb_logged_in;
+    if (filter === 'banned') return p.account_status === 'banned' || p.account_status === 'facial_verify' || p.account_status === 'challenge' || p.account_status === 'wrong_password' || p.account_status === 'email_verify';
+    return true;
+  });
   const selectedActiveCount = selectedIds.filter(id => warmupStatus[id]?.active).length;
   const selectedInactiveCount = selectedIds.filter(id => {
     const ws = warmupStatus[id];
@@ -230,13 +245,29 @@ export default function Warmup({ tier, onUpgrade }) {
         Calentamiento progresivo de 14 dias para cuentas nuevas de Facebook
       </p>
 
-      {/* Stats bar */}
-      <div className="flex items-center gap-4 mb-4 text-xs">
-        <span className="text-trust-muted">{profiles.length} perfiles</span>
-        <span className="text-trust-green font-medium">{activeCount} activos</span>
-        <span className="text-trust-accent font-medium">{completedCount} completados</span>
+      {/* Filters */}
+      <div className="flex items-center gap-1.5 mb-4 flex-wrap">
+        {[
+          { id: 'all', label: `Todos (${profiles.length})`, color: 'gray' },
+          { id: 'session', label: `Sesion OK (${sessionCount})`, color: 'green' },
+          { id: 'no-session', label: `Sin sesion (${profiles.length - sessionCount})`, color: 'gray' },
+          { id: 'active', label: `En warmup (${activeCount})`, color: 'green' },
+          { id: 'inactive', label: `Inactivos (${profiles.length - activeCount - completedCount})`, color: 'gray' },
+          { id: 'completed', label: `Completados (${completedCount})`, color: 'blue' },
+          { id: 'banned', label: `Problemas (${bannedCount})`, color: 'red' },
+        ].map(f => (
+          <button key={f.id} onClick={() => setFilter(f.id)}
+            className={`px-2.5 py-1 rounded-full text-[10px] font-medium transition-all ${filter === f.id
+              ? f.color === 'green' ? 'bg-trust-green text-white'
+              : f.color === 'blue' ? 'bg-trust-accent text-white'
+              : f.color === 'red' ? 'bg-red-500 text-white'
+              : 'bg-trust-dark text-white'
+              : 'bg-trust-surface text-trust-muted hover:text-trust-dark'}`}>
+            {f.label}
+          </button>
+        ))}
         {selectedIds.length > 0 && (
-          <span className="text-blue-600 font-medium">{selectedIds.length} seleccionados</span>
+          <span className="text-[10px] text-blue-600 font-medium ml-2">{selectedIds.length} seleccionados</span>
         )}
       </div>
 
@@ -292,7 +323,7 @@ export default function Warmup({ tier, onUpgrade }) {
                 </tr>
               </thead>
               <tbody>
-                {profiles.map((profile) => {
+                {filteredProfiles.map((profile) => {
                   const ws = warmupStatus[profile.id] || {};
                   const day = ws.day || 0;
                   const isActive = ws.active || false;
@@ -304,6 +335,7 @@ export default function Warmup({ tier, onUpgrade }) {
                   const progressPct = day > 0 ? Math.min((day / 14) * 100, 100) : 0;
                   const isLoading = loading[profile.id] || false;
                   const isSelected = selectedIds.includes(profile.id);
+                  const isBrowserOpen = runningIds.includes(profile.id);
 
                   return (
                     <tr key={profile.id}
@@ -313,14 +345,38 @@ export default function Warmup({ tier, onUpgrade }) {
                           className="accent-blue-600 w-3.5 h-3.5 cursor-pointer" />
                       </td>
                       <td className="py-2.5 px-2">
-                        <div className="font-medium text-trust-dark text-xs">{profile.name}</div>
-                        {profile.fb_user && <div className="text-[10px] text-trust-muted">{profile.fb_user}</div>}
+                        <div className="flex items-center gap-1.5">
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${isBrowserOpen ? 'bg-trust-green animate-pulse' : 'bg-gray-300'}`} />
+                          <div>
+                            <div className="font-medium text-trust-dark text-xs">{profile.name}</div>
+                            {profile.fb_user && <div className="text-[10px] text-trust-muted">{profile.fb_user}</div>}
+                          </div>
+                        </div>
                       </td>
                       <td className="py-2.5 px-2 text-center">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${badge.classes}`}>
-                          {badge.pulse && <span className="w-1.5 h-1.5 rounded-full bg-trust-green animate-pulse" />}
-                          {badge.label}
-                        </span>
+                        <div className="flex flex-col items-center gap-0.5">
+                          {/* Account status */}
+                          {profile.account_status === 'banned' ? (
+                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-red-100 text-red-600">Baneada</span>
+                          ) : profile.account_status === 'facial_verify' ? (
+                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-red-100 text-red-600">Verif. facial</span>
+                          ) : profile.account_status === 'challenge' ? (
+                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-orange-100 text-orange-600">Challenge</span>
+                          ) : profile.account_status === 'wrong_password' ? (
+                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-yellow-100 text-yellow-600">Pass incorrecta</span>
+                          ) : profile.account_status === 'email_verify' ? (
+                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-purple-100 text-purple-600">Verif. email</span>
+                          ) : profile.fb_logged_in ? (
+                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-trust-green/10 text-trust-green">Sesion OK</span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-gray-100 text-gray-500">Sin sesion</span>
+                          )}
+                          {/* Warmup status */}
+                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold ${badge.classes}`}>
+                            {badge.pulse && <span className="w-1 h-1 rounded-full bg-trust-green animate-pulse" />}
+                            {badge.label}
+                          </span>
+                        </div>
                       </td>
                       <td className="py-2.5 px-2 text-center text-xs text-trust-dark font-medium">
                         {isStarted ? `${Math.min(day, 14)}/14` : '-'}
@@ -371,7 +427,7 @@ export default function Warmup({ tier, onUpgrade }) {
       ) : (
         /* ── CARDS VIEW (original) ── */
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {profiles.map((profile) => {
+          {filteredProfiles.map((profile) => {
             const ws = warmupStatus[profile.id] || {};
             const day = ws.day || 0;
             const isActive = ws.active || false;
