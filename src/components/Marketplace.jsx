@@ -28,6 +28,8 @@ export default function Marketplace({ tier }) {
   const [activeTab, setActiveTab] = useState('publish');
   const [running, setRunning] = useState(false);
   const [logs, setLogs] = useState([]);
+  const [failedLoginIds, setFailedLoginIds] = useState(new Set());
+  const [stopping, setStopping] = useState(false);
   const logRef = useRef(null);
 
   // Form states
@@ -86,6 +88,25 @@ export default function Marketplace({ tier }) {
   const toggleProfile = (id) => setSelectedProfiles(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const selectAll = () => setSelectedProfiles(allProfiles.map(p => p.id));
 
+  // Detener ejecuciones cierra todos los browsers activos (los profiles que estaban corriendo
+  // se cancelan al perder la page).
+  const handleStopAll = async () => {
+    if (stopping) return;
+    setStopping(true);
+    addLog('⏹ Deteniendo ejecuciones...', 'error');
+    try {
+      const activeBrowsers = await window.api.getBrowserStatus().catch(() => []);
+      const idsToClose = activeBrowsers.length > 0 ? activeBrowsers : selectedProfiles;
+      await Promise.all(idsToClose.map((pid) =>
+        window.api.closeBrowser(pid).catch(() => {})
+      ));
+      addLog(`✓ Cerrados ${idsToClose.length} navegador(es)`, 'done');
+    } finally {
+      setRunning(false);
+      setStopping(false);
+    }
+  };
+
   /**
    * Ensure browsers are open and logged in for selected profiles.
    * Launches browsers, waits for login/2FA to complete, returns only ready profile IDs.
@@ -133,10 +154,12 @@ export default function Marketplace({ tier }) {
         if (status?.loggedIn) {
           readyIds.push(pid);
           addLog(`${pName}: logueado y listo`, 'done');
+          setFailedLoginIds((prev) => { const n = new Set(prev); n.delete(pid); return n; });
         } else if (!isActive) {
           // Browser closed — login failed
           failedIds.push(pid);
           addLog(`${pName}: fallo login (navegador cerrado)`, 'error');
+          setFailedLoginIds((prev) => new Set(prev).add(pid));
         }
         // If active but not logged in — still in login/2FA process, keep waiting
       }
@@ -159,8 +182,10 @@ export default function Marketplace({ tier }) {
         if (s?.loggedIn) {
           readyIds.push(pid);
           addLog(`${pName}: logueado (tardio)`, 'done');
+          setFailedLoginIds((prev) => { const n = new Set(prev); n.delete(pid); return n; });
         } else {
           addLog(`${pName}: no logueado — omitido`, 'error');
+          setFailedLoginIds((prev) => new Set(prev).add(pid));
         }
       }
     }
@@ -365,9 +390,20 @@ export default function Marketplace({ tier }) {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="mb-4">
-        <h2 className="text-xl font-bold text-trust-dark flex items-center gap-2">🏪 Marketplace</h2>
-        <p className="text-xs text-trust-muted mt-1">Publica, scrapea, contacta vendedores y gestiona listings</p>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-trust-dark flex items-center gap-2">🏪 Marketplace</h2>
+          <p className="text-xs text-trust-muted mt-1">Publica, scrapea, contacta vendedores y gestiona listings</p>
+        </div>
+        {running && (
+          <button
+            onClick={handleStopAll}
+            disabled={stopping}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex-shrink-0">
+            <span className="w-2 h-2 rounded-sm bg-white"></span>
+            {stopping ? 'Deteniendo...' : 'Parar ejecución'}
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
@@ -391,10 +427,13 @@ export default function Marketplace({ tier }) {
           {allProfiles.map(p => {
             const isActive = p.status === 'active' || p.fb_logged_in;
             const isSelected = selectedProfiles.includes(p.id);
+            const failedLogin = failedLoginIds.has(p.id);
+            const dotColor = failedLogin ? 'bg-red-500' : (isActive ? 'bg-green-500' : 'bg-gray-400');
             return (
               <button key={p.id} onClick={() => toggleProfile(p.id)}
+                title={failedLogin ? 'No inició sesión — revisar credenciales' : (isActive ? 'Activo' : 'Inactivo')}
                 className={`w-full text-left px-2 py-1.5 rounded-lg text-xs mb-0.5 truncate ${isSelected ? 'bg-blue-500/10 text-blue-600 font-medium' : 'text-trust-muted hover:bg-trust-surface'}`}>
-                {isSelected ? '✓ ' : ''}<span className={`inline-block w-1.5 h-1.5 rounded-full mr-1 ${isActive ? 'bg-green-500' : 'bg-gray-400'}`}></span>{p.name}
+                {isSelected ? '✓ ' : ''}<span className={`inline-block w-1.5 h-1.5 rounded-full mr-1 ${dotColor}`}></span>{p.name}
               </button>
             );
           })}
