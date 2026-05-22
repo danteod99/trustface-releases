@@ -8,6 +8,8 @@ export default function UpdateNotification() {
   const [dismissed, setDismissed] = useState(false);
   const [error, setError] = useState(null);
   const [installing, setInstalling] = useState(false);
+  const isMac = (window.api?.platform || 'darwin') === 'darwin';
+  const [openedManual, setOpenedManual] = useState(false);
 
   useEffect(() => {
     window.api.onUpdateAvailable?.((info) => setUpdateInfo(info));
@@ -50,6 +52,9 @@ export default function UpdateNotification() {
                 <span className="text-[10px] text-white/50">{progress}%</span>
               </div>
             )}
+            {openedManual && (
+              <p className="text-[10px] text-white/60 mt-1">Se abrió la descarga en tu navegador. Cierra esta app, arrastra el nuevo DMG a Aplicaciones reemplazando el actual.</p>
+            )}
             {error && <p className="text-[10px] text-red-400 mt-1">{error}</p>}
           </div>
         </div>
@@ -62,9 +67,19 @@ export default function UpdateNotification() {
           ) : downloading ? (
             <span className="text-xs text-white/50">Descargando...</span>
           ) : (
-            <button onClick={() => { setDownloading(true); setError(null); window.api.downloadUpdate(); }}
+            <button
+              onClick={async () => {
+                setError(null);
+                if (isMac) {
+                  setOpenedManual(true);
+                  await window.api.openReleaseDownload?.();
+                } else {
+                  setDownloading(true);
+                  window.api.downloadUpdate();
+                }
+              }}
               className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700">
-              Descargar
+              {isMac ? 'Abrir descarga' : 'Descargar'}
             </button>
           )}
           <button onClick={() => setDismissed(true)} className="text-white/30 hover:text-white text-xs">✕</button>

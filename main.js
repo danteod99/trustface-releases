@@ -288,6 +288,23 @@ app.whenReady().then(() => {
   if (app.isPackaged) { setTimeout(() => autoUpdater.checkForUpdates().catch((e) => console.error('[Updater] Check error:', e.message)), 3000); }
   ipcMain.handle('updater:check', async () => { try { const r = await autoUpdater.checkForUpdates(); return { success: true, updateInfo: r?.updateInfo }; } catch (e) { return { success: false, error: e.message }; } });
   ipcMain.handle('updater:download', async () => { try { await autoUpdater.downloadUpdate(); return { success: true }; } catch (e) { return { success: false, error: e.message }; } });
+  ipcMain.handle('updater:open-release', async () => {
+    try {
+      const r = await autoUpdater.checkForUpdates();
+      const version = r?.updateInfo?.version || app.getVersion();
+      const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+      const file = process.platform === 'darwin'
+        ? `TrustFace-Desktop-${version}-${arch}.dmg`
+        : `TrustFace-Desktop-Setup-${version}.exe`;
+      const url = `https://github.com/danteod99/trustface-releases/releases/download/v${version}/${file}`;
+      await shell.openExternal(url);
+      return { success: true, url };
+    } catch (e) {
+      const fallback = `https://github.com/danteod99/trustface-releases/releases/latest`;
+      await shell.openExternal(fallback);
+      return { success: false, error: e.message, fallback };
+    }
+  });
   ipcMain.handle('updater:install', () => {
     console.log('[Updater] Installing update — closing all windows and browsers...');
     setImmediate(async () => {
