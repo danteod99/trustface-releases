@@ -80,7 +80,7 @@ const TAB_ICONS = {
   ),
 };
 
-export default function Sidebar({ activeTab, setActiveTab, tabs, tier, user, onLogout, onUpgrade, proTabs = [] }) {
+export default function Sidebar({ activeTab, setActiveTab, tabs, tier, user, balance = 0, onLogout, onUpgrade, proTabs = [] }) {
   const [appVersion, setAppVersion] = useState('');
   useEffect(() => { window.api.getVersion?.().then(v => setAppVersion(v)).catch(() => {}); }, []);
 
@@ -140,6 +140,23 @@ export default function Sidebar({ activeTab, setActiveTab, tabs, tier, user, onL
 
       {/* User section */}
       <div className="p-3 border-t border-white/10">
+        {/* Saldo SMM */}
+        {user && (
+          <a
+            href="#"
+            onClick={(e) => { e.preventDefault(); window.api.openExternal?.('https://www.trustmind.online/smm/funds'); }}
+            className="flex items-center justify-between gap-2 mb-2 p-2 rounded-lg bg-trust-green/10 border border-trust-green/30 hover:bg-trust-green/20 transition-colors no-underline"
+            title="Recargar saldo en el panel"
+          >
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-trust-green" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-[10px] text-white/60 uppercase tracking-wide font-semibold">Saldo</span>
+            </div>
+            <span className="text-trust-green text-xs font-bold">${Number(balance).toFixed(2)}</span>
+          </a>
+        )}
         <div className="flex items-center gap-2 mb-2">
           <div className="w-8 h-8 bg-trust-accent rounded-full flex items-center justify-center text-white text-xs font-bold">
             {user?.email?.[0]?.toUpperCase() || 'U'}

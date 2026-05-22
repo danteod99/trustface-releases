@@ -701,6 +701,25 @@ ipcMain.handle('payment:history', async () => {
   }
 });
 
+// Saldo SMM del user (smm_balances)
+ipcMain.handle('user:get-balance', async () => {
+  if (!currentUser) return { balance: 0 };
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from('smm_balances')
+      .select('balance')
+      .eq('user_id', currentUser.id)
+      .maybeSingle();
+    if (error) {
+      console.log(`[Saldo] Error: ${error.message}`);
+      return { balance: 0 };
+    }
+    return { balance: Number(data?.balance || 0) };
+  } catch (err) {
+    return { balance: 0, error: err.message };
+});
+
 // ─── IPC: Profile CRUD ─────────────────────────────────────────────
 
 // Sensitive profile fields that must be encrypted at rest

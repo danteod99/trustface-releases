@@ -45,6 +45,18 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authView, setAuthView] = useState('login');
   const [showPayment, setShowPayment] = useState(false);
+  const [balance, setBalance] = useState(0);
+
+  // Refrescar saldo del user logueado
+  useEffect(() => {
+    if (!user) { setBalance(0); return; }
+    const fetchBalance = () => {
+      window.api.getBalance?.().then((r) => setBalance(Number(r?.balance) || 0)).catch(() => {});
+    };
+    fetchBalance();
+    const interval = setInterval(fetchBalance, 60000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   useEffect(() => {
     window.api.getSession().then((session) => {
@@ -78,7 +90,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-trust-bg">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} tabs={TABS} tier={tier} user={user} onLogout={handleLogout} onUpgrade={() => setShowPayment(true)} proTabs={PRO_TABS} />
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} tabs={TABS} tier={tier} user={user} balance={balance} onLogout={handleLogout} onUpgrade={() => setShowPayment(true)} proTabs={PRO_TABS} />
       <main className="flex-1 overflow-y-auto p-6">
         <UpdateNotification />
         {/* Scaling LATAM Banner */}
