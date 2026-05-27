@@ -104,10 +104,17 @@ contextBridge.exposeInMainWorld('api', {
   checkPaymentStatus: (orderId) => ipcRenderer.invoke('payment:check-status', orderId),
   getPaymentHistory: () => ipcRenderer.invoke('payment:history'),
   getBalance: () => ipcRenderer.invoke('user:get-balance'),
+  chargeAction: (action, count) => ipcRenderer.invoke('desktop:charge', action, count),
 
   // Events from main process
   onAutomationEvent: (callback) => {
     ipcRenderer.on('automation:event', (_, data) => callback(data));
+  },
+  onBalanceUpdated: (callback) => {
+    ipcRenderer.on('balance:updated', (_, data) => callback(data));
+  },
+  onBalanceInsufficient: (callback) => {
+    ipcRenderer.on('balance:insufficient', (_, data) => callback(data));
   },
   onLoginSuccess: (callback) => {
     ipcRenderer.on('fb:login-success', (_, profileId) => callback(profileId));

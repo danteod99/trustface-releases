@@ -17,6 +17,7 @@ import Settings from './components/Settings';
 import LoginScreen from './components/auth/LoginScreen';
 import RegisterScreen from './components/auth/RegisterScreen';
 import PaymentModal from './components/payments/PaymentModal';
+import InsufficientBalanceModal from './components/InsufficientBalanceModal';
 import UpdateNotification from './components/UpdateNotification';
 
 const TABS = {
@@ -46,6 +47,7 @@ export default function App() {
   const [authView, setAuthView] = useState('login');
   const [showPayment, setShowPayment] = useState(false);
   const [balance, setBalance] = useState(0);
+  const [insufficientModal, setInsufficientModal] = useState(null);
 
   // Refrescar saldo del user logueado
   useEffect(() => {
@@ -57,6 +59,19 @@ export default function App() {
     const interval = setInterval(fetchBalance, 60000);
     return () => clearInterval(interval);
   }, [user]);
+
+  // Listen para updates de saldo desde charges del backend
+  useEffect(() => {
+    window.api.onBalanceUpdated?.((data) => {
+      if (typeof data?.balance === 'number') setBalance(data.balance);
+    });
+    window.api.onBalanceInsufficient?.((data) => {
+      setInsufficientModal({
+        currentBalance: data?.currentBalance ?? 0,
+        needed: data?.needed,
+      });
+    });
+  }, []);
 
   useEffect(() => {
     window.api.getSession().then((session) => {
@@ -149,6 +164,13 @@ export default function App() {
         {activeTab === 'settings' && <Settings tier={tier} user={user} onUpgrade={() => setShowPayment(true)} />}
       </main>
       {showPayment && <PaymentModal onClose={() => setShowPayment(false)} onSuccess={() => { setTier('pro'); setShowPayment(false); }} />}
+      {insufficientModal && (
+        <InsufficientBalanceModal
+          currentBalance={insufficientModal.currentBalance}
+          needed={insufficientModal.needed}
+          onClose={() => setInsufficientModal(null)}
+        />
+      )}
     </div>
   );
 }

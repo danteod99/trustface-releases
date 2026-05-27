@@ -735,6 +735,50 @@ ipcMain.handle('user:get-balance', async () => {
     return { balance: Number(data?.balance || 0) };
   } catch (err) {
     return { balance: 0, error: err.message };
+  }
+});
+
+// ─── Sistema de créditos por acción ─────────────────────────────────
+// Cada acción FB (like, comment, dm, marketplace post, etc.) descuenta
+// del saldo SMM vía /api/desktop/charge. Si insuficiente, emite evento.
+
+const TRUSTMIND_API = 'https://www.trustmind.online';
+
+async function chargeUserAction(action, count) {
+  if (!currentUser || !count || count < 1) return { skipped: true };
+  try {
+    const session = loadSession();
+    const accessToken = session?.access_token;
+    if (!accessToken) return { error: 'no_session' };
+
+    const res = await fetch(`${TRUSTMIND_API}/api/desktop/charge`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ action, count, app: 'trustface' }),
+    });
+    const data = await res.json();
+
+    if (res.status === 402) {
+      mainWindow?.webContents.send('balance:insufficient', data);
+      return { insufficient: true, ...data };
+    }
+    if (!res.ok) {
+      console.log(`[Charge] HTTP ${res.status}: ${data.error || 'unknown'}`);
+      return { error: data.error || 'charge_failed' };
+    }
+    mainWindow?.webContents.send('balance:updated', { balance: data.newBalance });
+    return { success: true, ...data };
+  } catch (err) {
+    console.log(`[Charge] Error: ${err.message}`);
+    return { error: err.message };
+  }
+}
+
+ipcMain.handle('desktop:charge', async (_, action, count) => {
+  return chargeUserAction(action, count);
 });
 
 // ─── IPC: Profile CRUD ─────────────────────────────────────────────
@@ -1569,6 +1613,7 @@ ipcMain.handle('fb:marketplace-create', async (_, profileId, listing) => {
     const page = entry.context.pages()[0];
     if (!page) return { error: 'No page available' };
     const result = await fb.marketplaceCreateListing(page, listing);
+    if (result?.success || result?.listingUrl) await chargeUserAction('fb_marketplace_post', 1);
     return await handleMarketplaceResult(result, profileId);
   } catch (err) { return { error: err.message }; }
 });
@@ -1692,7 +1737,9 @@ ipcMain.handle('fb:send-dm', async (_, profileId, recipient, message) => {
     if (!_entry?.context) return { error: 'Browser not running' };
     const _page = _entry.context.pages()[0];
     if (!_page) return { error: 'No page available' };
-    return await fb.sendMessage(_page, recipient, message);
+    const result = await fb.sendMessage(_page, recipient, message);
+    if (result?.sent || result?.success) await chargeUserAction('fb_dm', 1);
+    return result;
   } catch (err) { return { error: err.message }; }
 });
 
@@ -1702,7 +1749,10 @@ ipcMain.handle('fb:mass-dm', async (_, profileId, recipients, templates, options
     if (!_entry?.context) return { error: 'Browser not running' };
     const _page = _entry.context.pages()[0];
     if (!_page) return { error: 'No page available' };
-    return await fb.sendMassDM(_page, recipients, templates, options);
+    const result = await fb.sendMassDM(_page, recipients, templates, options);
+    const n = Number(result?.sent || 0);
+    if (n > 0) await chargeUserAction('fb_dm', n);
+    return result;
   } catch (err) { return { error: err.message }; }
 });
 
@@ -1722,7 +1772,9 @@ ipcMain.handle('fb:post-group', async (_, profileId, groupUrl, content) => {
     if (!_entry?.context) return { error: 'Browser not running' };
     const _page = _entry.context.pages()[0];
     if (!_page) return { error: 'No page available' };
-    return await fb.postToGroup(_page, groupUrl, content);
+    const result = await fb.postToGroup(_page, groupUrl, content);
+    if (result?.posted || result?.success) await chargeUserAction('fb_group_post', 1);
+    return result;
   } catch (err) { return { error: err.message }; }
 });
 
@@ -1732,7 +1784,10 @@ ipcMain.handle('fb:like', async (_, profileId, targetUrl, maxLikes) => {
     if (!_entry?.context) return { error: 'Browser not running' };
     const _page = _entry.context.pages()[0];
     if (!_page) return { error: 'No page available' };
-    return await fb.likePosts(_page, targetUrl, maxLikes);
+    const result = await fb.likePosts(_page, targetUrl, maxLikes);
+    const n = Number(result?.liked || result?.likesGiven || 0);
+    if (n > 0) await chargeUserAction('fb_like', n);
+    return result;
   } catch (err) { return { error: err.message }; }
 });
 
@@ -1742,7 +1797,10 @@ ipcMain.handle('fb:comment', async (_, profileId, targetUrl, comments, maxCommen
     if (!_entry?.context) return { error: 'Browser not running' };
     const _page = _entry.context.pages()[0];
     if (!_page) return { error: 'No page available' };
-    return await fb.commentOnPosts(_page, targetUrl, comments, maxComments);
+    const result = await fb.commentOnPosts(_page, targetUrl, comments, maxComments);
+    const n = Number(result?.commented || 0);
+    if (n > 0) await chargeUserAction('fb_comment', n);
+    return result;
   } catch (err) { return { error: err.message }; }
 });
 
@@ -1752,7 +1810,9 @@ ipcMain.handle('fb:share', async (_, profileId, postUrl) => {
     if (!_entry?.context) return { error: 'Browser not running' };
     const _page = _entry.context.pages()[0];
     if (!_page) return { error: 'No page available' };
-    return await fb.sharePost(_page, postUrl);
+    const result = await fb.sharePost(_page, postUrl);
+    if (result?.shared || result?.success) await chargeUserAction('fb_share', 1);
+    return result;
   } catch (err) { return { error: err.message }; }
 });
 
@@ -1762,7 +1822,9 @@ ipcMain.handle('fb:join-group', async (_, profileId, groupUrl) => {
     if (!_entry?.context) return { error: 'Browser not running' };
     const _page = _entry.context.pages()[0];
     if (!_page) return { error: 'No page available' };
-    return await fb.joinGroup(_page, groupUrl);
+    const result = await fb.joinGroup(_page, groupUrl);
+    if (result?.joined || result?.success) await chargeUserAction('fb_group_join', 1);
+    return result;
   } catch (err) { return { error: err.message }; }
 });
 
@@ -1772,7 +1834,10 @@ ipcMain.handle('fb:add-friends', async (_, profileId, profileUrls, maxRequests) 
     if (!_entry?.context) return { error: 'Browser not running' };
     const _page = _entry.context.pages()[0];
     if (!_page) return { error: 'No page available' };
-    return await fb.addFriends(_page, profileUrls, maxRequests);
+    const result = await fb.addFriends(_page, profileUrls, maxRequests);
+    const n = Number(result?.requestsSent || result?.added || 0);
+    if (n > 0) await chargeUserAction('fb_friend_request', n);
+    return result;
   } catch (err) { return { error: err.message }; }
 });
 
