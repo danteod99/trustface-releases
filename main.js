@@ -285,8 +285,22 @@ app.whenReady().then(() => {
     console.error(`[Updater] Stack: ${err.stack}`);
     if (mainWindow) mainWindow.webContents.send('updater:error', { error: err.message });
   });
-  if (app.isPackaged) { setTimeout(() => autoUpdater.checkForUpdates().catch((e) => console.error('[Updater] Check error:', e.message)), 3000); }
-  ipcMain.handle('updater:check', async () => { try { const r = await autoUpdater.checkForUpdates(); return { success: true, updateInfo: r?.updateInfo }; } catch (e) { return { success: false, error: e.message }; } });
+  async function safeCheckUpdates(reason) {
+    try {
+      const r = await autoUpdater.checkForUpdates();
+      console.log(`[Updater] check (${reason}): currentVersion=${app.getVersion()} latest=${r?.updateInfo?.version}`);
+      return r;
+    } catch (e) {
+      console.error(`[Updater] check (${reason}) FAILED:`, e.message);
+      if (mainWindow) mainWindow.webContents.send('updater:error', { error: e.message });
+      return null;
+    }
+  }
+  if (app.isPackaged) {
+    setTimeout(() => safeCheckUpdates('startup'), 3000);
+    setInterval(() => safeCheckUpdates('periodic-30min'), 30 * 60 * 1000);
+  }
+  ipcMain.handle('updater:check', async () => { try { const r = await autoUpdater.checkForUpdates(); return { success: true, updateInfo: r?.updateInfo, currentVersion: app.getVersion() }; } catch (e) { return { success: false, error: e.message }; } });
   ipcMain.handle('updater:download', async () => { try { await autoUpdater.downloadUpdate(); return { success: true }; } catch (e) { return { success: false, error: e.message }; } });
   ipcMain.handle('updater:open-release', async () => {
     try {

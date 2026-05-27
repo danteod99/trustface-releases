@@ -117,6 +117,9 @@ export default function Settings({ tier, user, onUpgrade }) {
         )}
       </div>
 
+      {/* Buscar actualizaciones */}
+      <UpdateCheck />
+
       {/* AI Text Generation */}
       <div className="bg-white border border-trust-border rounded-xl p-6 shadow-trust max-w-2xl mb-6">
         <div className="flex items-center gap-3 mb-4">
@@ -218,6 +221,75 @@ export default function Settings({ tier, user, onUpgrade }) {
             </p>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* eslint-disable react-refresh/only-export-components */
+function UpdateCheck() {
+  const [status, setStatus] = useState('idle');
+  const [currentVersion, setCurrentVersion] = useState('');
+  const [latestVersion, setLatestVersion] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  useEffect(() => {
+    window.api.getVersion?.().then((v) => setCurrentVersion(v)).catch(() => {});
+  }, []);
+
+  const handleCheck = async () => {
+    setStatus('checking');
+    setErrorMsg('');
+    const res = await window.api.checkForUpdate?.();
+    if (!res) { setStatus('error'); setErrorMsg('No response from updater'); return; }
+    if (res.success) {
+      const latest = res.updateInfo?.version || res.currentVersion;
+      setLatestVersion(latest);
+      if (res.updateInfo && res.updateInfo.version !== res.currentVersion) {
+        setStatus('available');
+      } else {
+        setStatus('up-to-date');
+      }
+    } else {
+      setStatus('error');
+      setErrorMsg(res.error || 'Unknown error');
+    }
+  };
+
+  return (
+    <div className="bg-white border border-trust-border rounded-xl p-6 shadow-trust max-w-2xl mb-6">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 bg-trust-accent/10 rounded-lg flex items-center justify-center">
+          <svg className="w-5 h-5 text-trust-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </div>
+        <div>
+          <h3 className="text-base font-bold text-trust-dark">Actualizaciones</h3>
+          <p className="text-xs text-trust-muted">Versión actual: <span className="font-mono font-semibold">{currentVersion || '...'}</span></p>
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleCheck}
+          disabled={status === 'checking'}
+          className="px-4 py-2 bg-trust-accent text-white rounded-lg text-sm font-medium hover:bg-trust-accent-hover disabled:opacity-50 transition-colors"
+        >
+          {status === 'checking' ? 'Buscando...' : 'Buscar actualizaciones'}
+        </button>
+        {status === 'up-to-date' && (
+          <span className="text-xs text-trust-green flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-trust-green" />Ya tienes la última versión
+          </span>
+        )}
+        {status === 'available' && (
+          <span className="text-xs text-trust-accent font-semibold">
+            Nueva versión disponible: v{latestVersion} (verás el banner arriba)
+          </span>
+        )}
+        {status === 'error' && (
+          <span className="text-xs text-red-500" title={errorMsg}>Error: {errorMsg.slice(0, 60)}</span>
+        )}
       </div>
     </div>
   );
