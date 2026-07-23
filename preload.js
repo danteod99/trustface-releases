@@ -4,6 +4,10 @@ contextBridge.exposeInMainWorld('api', {
   // External links
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
+  // Native dialogs
+  selectFolder: () => ipcRenderer.invoke('dialog:select-folder'),
+  selectFiles: (opts) => ipcRenderer.invoke('dialog:select-files', opts),
+
   // Profiles
   listProfiles: () => ipcRenderer.invoke('profiles:list'),
   createProfile: (profile) => ipcRenderer.invoke('profiles:create', profile),
@@ -29,7 +33,6 @@ contextBridge.exposeInMainWorld('api', {
   autoComment: (profileId, config) => ipcRenderer.invoke('auto:comment', profileId, config),
   uploadPost: (profileId, config) => ipcRenderer.invoke('auto:upload-post', profileId, config),
   editProfileIG: (profileId, config) => ipcRenderer.invoke('auto:edit-profile', profileId, config),
-  sharePost: (profileId, config) => ipcRenderer.invoke('auto:share-post', profileId, config),
   buffPost: (profileId, config) => ipcRenderer.invoke('auto:buff-post', profileId, config),
   followSuggestions: (profileId, config) => ipcRenderer.invoke('auto:follow-suggestions', profileId, config),
   searchAndFollow: (profileId, config) => ipcRenderer.invoke('auto:search-follow', profileId, config),

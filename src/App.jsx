@@ -49,6 +49,9 @@ export default function App() {
   const [balance, setBalance] = useState(0);
   const [insufficientModal, setInsufficientModal] = useState(null);
 
+  // Contacto por WhatsApp para activar el plan Pro (reemplaza el pago por creditos)
+  const openProWhatsApp = () => window.api.openExternal?.('https://wa.me/51931119176?text=' + encodeURIComponent('Hola, quiero activar el plan Pro para usar todas las funciones.'));
+
   // Refrescar saldo del user logueado
   useEffect(() => {
     if (!user) { setBalance(0); return; }
@@ -105,7 +108,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-trust-bg">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} tabs={TABS} tier={tier} user={user} balance={balance} onLogout={handleLogout} onUpgrade={() => setShowPayment(true)} proTabs={PRO_TABS} />
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} tabs={TABS} tier={tier} user={user} balance={balance} onLogout={handleLogout} onUpgrade={openProWhatsApp} proTabs={PRO_TABS} />
       <main className="flex-1 overflow-y-auto p-6">
         <UpdateNotification />
         {/* Scaling LATAM Banner */}
@@ -149,19 +152,19 @@ export default function App() {
           </div>
         </a>
         {activeTab === 'dashboard' && <Dashboard />}
-        {activeTab === 'profiles' && <ProfileList tier={tier} onUpgrade={() => setShowPayment(true)} />}
-        {activeTab === 'automations' && <FacebookAutomations tier={tier} onUpgrade={() => setShowPayment(true)} />}
+        {activeTab === 'profiles' && <ProfileList tier={tier} onUpgrade={openProWhatsApp} />}
+        {activeTab === 'automations' && <FacebookAutomations tier={tier} onUpgrade={openProWhatsApp} />}
         {activeTab === 'marketplace' && <Marketplace tier={tier} />}
-        {activeTab === 'messenger' && <Messenger tier={tier} onUpgrade={() => setShowPayment(true)} />}
+        {activeTab === 'messenger' && <Messenger tier={tier} onUpgrade={openProWhatsApp} />}
         {activeTab === 'groups' && <GroupManager tier={tier} />}
         {activeTab === 'pages' && <PageManager tier={tier} />}
-        {activeTab === 'warmup' && <Warmup tier={tier} onUpgrade={() => setShowPayment(true)} />}
-        {activeTab === 'shadowban' && <ShadowbanCheck tier={tier} onUpgrade={() => setShowPayment(true)} />}
+        {activeTab === 'warmup' && <Warmup tier={tier} onUpgrade={openProWhatsApp} />}
+        {activeTab === 'shadowban' && <ShadowbanCheck tier={tier} onUpgrade={openProWhatsApp} />}
         {activeTab === 'followers' && <Followers />}
-        {activeTab === 'scraper' && <Scraper tier={tier} onUpgrade={() => setShowPayment(true)} />}
-        {activeTab === 'scheduler' && <Scheduler tier={tier} onUpgrade={() => setShowPayment(true)} />}
+        {activeTab === 'scraper' && <Scraper tier={tier} onUpgrade={openProWhatsApp} />}
+        {activeTab === 'scheduler' && <Scheduler tier={tier} onUpgrade={openProWhatsApp} />}
         {activeTab === 'proxies' && <ProxyImport />}
-        {activeTab === 'settings' && <Settings tier={tier} user={user} onUpgrade={() => setShowPayment(true)} />}
+        {activeTab === 'settings' && <Settings tier={tier} user={user} onUpgrade={openProWhatsApp} />}
       </main>
       {showPayment && <PaymentModal onClose={() => setShowPayment(false)} onSuccess={() => { setTier('pro'); setShowPayment(false); }} />}
       {insufficientModal && (

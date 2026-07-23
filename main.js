@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -26,12 +26,12 @@ function loadEnv() {
   } catch { /* .env not found, use process.env */ }
 }
 loadEnv();
-const { launchBrowser, closeBrowser, getActiveBrowsers, onLoginSuccess, onLoginFail, setCapsolverKey, getCapsolverKey } = require('./src/browser/manager');
+const { launchBrowser, closeBrowser, getActiveBrowsers, onLoginSuccess, onLoginFail, setCapsolverKey, getCapsolverKey, setCaptchaProvider, getCaptchaProvider } = require('./src/browser/manager');
 const {
   autoLike, autoFollow, autoUnfollow, autoViewStories,
   autoVisitProfiles, autoComment, extractFollowers,
   likeByHashtag, likeFeed, likeExplore, watchReels, followByHashtag, sendDM,
-  uploadPost, editProfile, sharePost, buffPost, followSuggestions, searchAndFollow,
+  uploadPost, editProfile, buffPost, followSuggestions, searchAndFollow,
   cancelAutomation, getAllAutomationStatus, onAutomationEvent,
 } = require('./src/browser/automations');
 const { scrapeProfiles, scrapeHashtagEmails, scrapeFollowersData, onScraperEvent } = require('./src/browser/scrapers');
@@ -248,6 +248,11 @@ app.whenReady().then(() => {
   if (capRow && capRow.value) {
     setCapsolverKey(capRow.value);
     console.log('[CapSolver] API key loaded from settings');
+  }
+  const provRow = db.prepare("SELECT value FROM settings WHERE key = 'captcha_provider'").get();
+  if (provRow && provRow.value) {
+    setCaptchaProvider(provRow.value);
+    console.log('[Captcha] Provider loaded from settings:', provRow.value);
   }
 
   createWindow();
@@ -759,6 +764,10 @@ ipcMain.handle('user:get-balance', async () => {
 const TRUSTMIND_API = 'https://www.trustmind.online';
 
 async function chargeUserAction(action, count) {
+  // Modelo sin creditos: las acciones ya no se cobran por saldo.
+  // El acceso se controla por tier (free/pro). Pro se activa por WhatsApp.
+  return { success: true, skipped: true };
+  // eslint-disable-next-line no-unreachable
   if (!currentUser || !count || count < 1) return { skipped: true };
   try {
     const session = loadSession();
@@ -815,6 +824,30 @@ function decryptProfile(profile) {
 
 ipcMain.handle('open-external', (_, url) => {
   if (typeof url === 'string' && url.startsWith('https://')) shell.openExternal(url);
+});
+
+ipcMain.handle('dialog:select-folder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Selecciona la carpeta de fotos',
+    properties: ['openDirectory'],
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  return result.filePaths[0];
+});
+
+ipcMain.handle('dialog:select-files', async (_, opts = {}) => {
+  const properties = ['openFile'];
+  if (opts.multiple) properties.push('multiSelections');
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: opts.multiple ? 'Selecciona los archivos' : 'Selecciona el archivo',
+    properties,
+    filters: [
+      { name: 'Imagenes y videos', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4', 'mov', 'avi', 'mkv', 'webm'] },
+      { name: 'Todos los archivos', extensions: ['*'] },
+    ],
+  });
+  if (result.canceled || !result.filePaths.length) return [];
+  return result.filePaths;
 });
 
 ipcMain.handle('profiles:list', () => {
@@ -1166,17 +1199,6 @@ ipcMain.handle('auto:edit-profile', async (_, profileId, config) => {
   try { return await editProfile(profileId, config); } catch (err) { return { error: err.message }; }
 });
 
-ipcMain.handle('auto:share-post', async (_, profileId, config) => {
-  try {
-    const result = await sharePost(profileId, config);
-    if (result.shared > 0) {
-      const db = getDb();
-      db.prepare('INSERT INTO action_log (profile_id, action_type, target, count) VALUES (?, ?, ?, ?)').run(profileId, 'share-post', config.postUrl || '', result.shared);
-    }
-    return result;
-  } catch (err) { return { error: err.message }; }
-});
-
 ipcMain.handle('auto:buff-post', async (_, profileId, config) => {
   try { return await buffPost(profileId, config); } catch (err) { return { error: err.message }; }
 });
@@ -1299,6 +1321,10 @@ ipcMain.handle('settings:set', (_, key, value) => {
   if (key === 'capsolver_api_key') {
     setCapsolverKey(value);
     console.log('[CapSolver] API key updated');
+  }
+  if (key === 'captcha_provider') {
+    setCaptchaProvider(value);
+    console.log('[Captcha] Provider updated:', value);
   }
 
   return { success: true };

@@ -3,7 +3,13 @@ import React, { useState, useEffect } from 'react';
 const INPUT_CLASS = 'w-full bg-trust-surface border border-trust-border rounded-lg px-3 py-2.5 text-trust-dark text-sm focus:outline-none focus:border-trust-accent focus:ring-1 focus:ring-trust-accent/20';
 const LABEL_CLASS = 'block text-xs text-trust-muted font-medium mb-1.5';
 
+const CAPTCHA_BASE = {
+  capsolver: 'https://api.capsolver.com',
+  omocaptcha: 'https://api.omocaptcha.com/v2',
+};
+
 export default function Settings({ tier, user, onUpgrade }) {
+  const [captchaProvider, setCaptchaProvider] = useState('capsolver');
   const [capsolverKey, setCapsolverKey] = useState('');
   const [aiApiKey, setAiApiKey] = useState('');
   const [aiProvider, setAiProvider] = useState('anthropic');
@@ -15,6 +21,9 @@ export default function Settings({ tier, user, onUpgrade }) {
     window.api.getSetting('capsolver_api_key').then((val) => {
       if (val) setCapsolverKey(val);
     });
+    window.api.getSetting('captcha_provider').then((val) => {
+      if (val) setCaptchaProvider(val);
+    });
     window.api.getSetting('ai_api_key').then((val) => {
       if (val) setAiApiKey(val);
     });
@@ -25,6 +34,7 @@ export default function Settings({ tier, user, onUpgrade }) {
 
   const handleSave = async () => {
     await window.api.setSetting('capsolver_api_key', capsolverKey.trim());
+    await window.api.setSetting('captcha_provider', captchaProvider);
     await window.api.setSetting('ai_api_key', aiApiKey.trim());
     await window.api.setSetting('ai_provider', aiProvider);
     setSaved(true);
@@ -36,7 +46,8 @@ export default function Settings({ tier, user, onUpgrade }) {
     setChecking(true);
     setBalance(null);
     try {
-      const res = await fetch('https://api.capsolver.com/getBalance', {
+      const base = CAPTCHA_BASE[captchaProvider] || CAPTCHA_BASE.capsolver;
+      const res = await fetch(base + '/getBalance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientKey: capsolverKey.trim() }),
@@ -154,14 +165,25 @@ export default function Settings({ tier, user, onUpgrade }) {
             </svg>
           </div>
           <div>
-            <h3 className="text-base font-bold text-trust-dark">CapSolver — Auto CAPTCHA</h3>
-            <p className="text-xs text-trust-muted">Resuelve captchas automaticamente al iniciar sesion en Instagram</p>
+            <h3 className="text-base font-bold text-trust-dark">Auto CAPTCHA</h3>
+            <p className="text-xs text-trust-muted">Resuelve captchas automaticamente al iniciar sesion</p>
           </div>
         </div>
 
         <div className="space-y-4">
           <div>
-            <label className={LABEL_CLASS}>API Key de CapSolver</label>
+            <label className={LABEL_CLASS}>Proveedor de CAPTCHA</label>
+            <select
+              value={captchaProvider}
+              onChange={(e) => { setCaptchaProvider(e.target.value); setBalance(null); }}
+              className={INPUT_CLASS}
+            >
+              <option value="capsolver">CapSolver</option>
+              <option value="omocaptcha">OmoCaptcha</option>
+            </select>
+          </div>
+          <div>
+            <label className={LABEL_CLASS}>API Key de {captchaProvider === 'omocaptcha' ? 'OmoCaptcha' : 'CapSolver'}</label>
             <div className="flex gap-2">
               <input
                 type="password"

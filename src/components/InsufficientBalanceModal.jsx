@@ -2,7 +2,7 @@ import React from 'react';
 
 export default function InsufficientBalanceModal({ currentBalance, needed, onClose }) {
   const handleRecharge = () => {
-    window.api.openExternal?.('https://www.trustmind.online/smm/funds');
+    window.api.openExternal?.('https://wa.me/51931119176');
   };
 
   return (

@@ -119,7 +119,7 @@ export default function GroupManager({ tier }) {
               <div className="space-y-3">
                 <div><label className={LABEL_CLASS}>URLs de Grupos (uno por linea)</label><textarea value={groupUrls} onChange={e => setGroupUrls(e.target.value)} rows={3} placeholder={"https://facebook.com/groups/grupo1"} className={INPUT_CLASS + ' resize-none font-mono text-xs'} /></div>
                 <div><label className={LABEL_CLASS}>Texto del Post</label><textarea value={postText} onChange={e => setPostText(e.target.value)} rows={3} placeholder="Escribe tu publicacion..." className={INPUT_CLASS + ' resize-none'} /></div>
-                <div><label className={LABEL_CLASS}>Fotos (rutas separadas por coma)</label><input type="text" value={postPhotos} onChange={e => setPostPhotos(e.target.value)} placeholder="/ruta/foto.jpg" className={INPUT_CLASS} /></div>
+                <div><label className={LABEL_CLASS}>Fotos</label><div className="flex gap-2"><input type="text" value={postPhotos} onChange={e => setPostPhotos(e.target.value)} placeholder="Ningun archivo seleccionado" className={INPUT_CLASS + ' font-mono text-xs'} /><button type="button" onClick={async () => { const paths = await window.api.selectFiles?.({ multiple: true }); if (paths && paths.length) setPostPhotos(paths.join(', ')); }} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium shrink-0">Seleccionar</button></div></div>
                 <button onClick={postToGroups} disabled={running || !postText} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-40">{running ? 'Publicando...' : 'Publicar en Grupos'}</button>
               </div>
             )}

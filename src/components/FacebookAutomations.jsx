@@ -58,7 +58,7 @@ const ACTION_FIELDS = {
     { key: 'mpCategory', label: 'Categoria', type: 'select', options: [{ value: 'Electronica', label: 'Electronica' }, { value: 'Vehiculos', label: 'Vehiculos' }, { value: 'Hogar', label: 'Hogar' }, { value: 'Ropa', label: 'Ropa' }, { value: 'Deportes', label: 'Deportes' }, { value: 'Juguetes', label: 'Juguetes' }, { value: 'Otra', label: 'Otra' }], default: 'Electronica' },
     { key: 'mpCondition', label: 'Estado', type: 'select', options: [{ value: 'Nuevo', label: 'Nuevo' }, { value: 'Como nuevo', label: 'Como nuevo' }, { value: 'Buen estado', label: 'Buen estado' }, { value: 'Aceptable', label: 'Aceptable' }], default: 'Nuevo' },
     { key: 'mpLocation', label: 'Ubicacion', type: 'text', placeholder: 'Lima, Peru' },
-    { key: 'mpPhotos', label: 'Fotos (carpeta o rutas separadas por coma)', type: 'textarea', placeholder: '/Users/tu/carpeta-fotos o /ruta/foto1.jpg, /ruta/foto2.jpg', rows: 2 },
+    { key: 'mpPhotos', label: 'Fotos', type: 'file', multiple: true },
   ],
   'mp-repost': [
     { key: 'mpListingUrl', label: 'URL del Listing', type: 'text', placeholder: 'https://facebook.com/marketplace/item/...' },
@@ -99,13 +99,13 @@ const ACTION_FIELDS = {
   ],
   'post-create': [
     { key: 'postText', label: 'Texto del Post', type: 'textarea', placeholder: 'Escribe tu publicacion aqui...', rows: 3 },
-    { key: 'postPhotos', label: 'Fotos (rutas)', type: 'textarea', placeholder: '/ruta/foto1.jpg', rows: 2 },
+    { key: 'postPhotos', label: 'Fotos', type: 'file', multiple: true },
     { key: 'postPageUrl', label: 'URL de Pagina (dejar vacio = perfil)', type: 'text', placeholder: 'https://facebook.com/mipagina' },
   ],
   'post-group': [
     { key: 'groupUrls', label: 'URLs de Grupos (uno por linea)', type: 'textarea', placeholder: 'https://facebook.com/groups/grupo1\nhttps://facebook.com/groups/grupo2', rows: 4 },
     { key: 'postText', label: 'Texto del Post', type: 'textarea', placeholder: 'Escribe tu publicacion aqui...', rows: 3 },
-    { key: 'postPhotos', label: 'Fotos (rutas)', type: 'textarea', placeholder: '/ruta/foto1.jpg', rows: 2 },
+    { key: 'postPhotos', label: 'Fotos', type: 'file', multiple: true },
     { key: 'delayMin', label: 'Delay minimo (seg)', type: 'number', min: 1, max: 120, default: 10 },
     { key: 'delayMax', label: 'Delay maximo (seg)', type: 'number', min: 1, max: 120, default: 30 },
   ],
@@ -259,6 +259,32 @@ function ConfigFields({ actionId, config, onChange }) {
               <select value={config[f.key] || f.default || ''} onChange={(e) => update(f.key, e.target.value)} className={INPUT_CLASS}>
                 {f.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
+            </div>
+          );
+        }
+        if (f.type === 'file') {
+          return (
+            <div key={f.key}>
+              <label className={LABEL_CLASS}>{f.label}</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={config[f.key] || ''}
+                  onChange={(e) => update(f.key, e.target.value)}
+                  placeholder={f.placeholder || (f.multiple ? 'Ningun archivo seleccionado' : 'Ningun archivo seleccionado')}
+                  className={INPUT_CLASS + ' font-mono text-xs'}
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const paths = await window.api.selectFiles?.({ multiple: !!f.multiple });
+                    if (paths && paths.length) update(f.key, paths.join(', '));
+                  }}
+                  className="px-4 py-2 bg-trust-accent text-white rounded-lg text-sm font-medium hover:bg-trust-accent-hover transition-colors shrink-0"
+                >
+                  {f.multiple ? 'Seleccionar archivos' : 'Seleccionar archivo'}
+                </button>
+              </div>
             </div>
           );
         }

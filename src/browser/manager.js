@@ -12,6 +12,7 @@ const activeBrowsers = new Map();
 
 // CapSolver API key
 let capsolverApiKey = '';
+let captchaProvider = 'capsolver';
 
 // ─── Grid Layout for Browser Windows ────────────────────────────────
 // Mobile-sized windows arranged in a grid so multiple are visible at once
@@ -321,6 +322,10 @@ function setupBanMonitor(context, profile) {
         // Small delay to let page content render
         await page.waitForTimeout(1500);
         if (!activeBrowsers.has(profile.id)) return; // already closed
+        // No evaluar ban durante el flujo de login/verificacion — el login lo maneja
+        // aparte y estas paginas pueden disparar falsos positivos que cierran el navegador.
+        const monUrl = page.url();
+        if (monUrl.includes('/login') || monUrl.includes('checkpoint') || monUrl.includes('two_factor') || monUrl.includes('two_step') || monUrl.includes('/recover') || monUrl.includes('/confirm')) return;
         const isBanned = await checkForBanPage(page, profile);
         if (isBanned) {
           await handleBanDetected(profile, 'navigation-monitor');
@@ -586,7 +591,7 @@ async function launchBrowser(profile) {
   if (hasCapsolverExt && capsolverApiKey) {
     try {
       const configFile = path.join(capsolverPath, 'config.json');
-      fs.writeFileSync(configFile, JSON.stringify({ apiKey: capsolverApiKey }));
+      fs.writeFileSync(configFile, JSON.stringify({ apiKey: capsolverApiKey, provider: captchaProvider }));
       console.log(`[CapSolver] API key written to extension config.json`);
     } catch {
       // Ignore write errors (e.g. read-only extension dir)
@@ -640,11 +645,11 @@ async function launchBrowser(profile) {
       // For now, inject into every new page via context event
       const injectCapsolverKey = async (page) => {
         try {
-          await page.evaluate((key) => {
+          await page.evaluate(({ key, provider }) => {
             if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-              chrome.storage.local.set({ capsolverApiKey: key });
+              chrome.storage.local.set({ capsolverApiKey: key, captchaProvider: provider });
             }
-          }, capsolverApiKey);
+          }, { key: capsolverApiKey, provider: captchaProvider });
         } catch {
           // Extension may not be available on this page (e.g. chrome:// pages)
         }
@@ -765,9 +770,38 @@ async function launchBrowser(profile) {
             const hasNoPasswordField = !(await page.$('#pass, input[name="pass"], input[type="password"]'));
 
             if (hasProfilePhoto && hasNoPasswordField) {
-              console.log(`[FB Login] IDENTITY CONFIRMATION page detected for ${profile.name} — marking as banned and closing`);
-              if (loginFailCallback) loginFailCallback(profile.id, 'Confirmacion de identidad requerida — cuenta bloqueada');
-              await closeBrowser(profile.id);
+              // Foto + sin campo de contrasena puede ser DOS cosas distintas:
+              //  (a) Pagina benigna "Continuar como [nombre]" (sesion guardada) — NO es baneo.
+              //  (b) Confirmacion de identidad / bloqueo real.
+              // Antes se cerraba y marcaba baneado en ambos casos (falsos positivos que
+              // "cerraban el navegador solo"). Ahora intentamos continuar y, si no se puede,
+              // dejamos el navegador ABIERTO para revision manual en vez de cerrarlo.
+              const clickedContinue = await page.evaluate(() => {
+                const els = document.querySelectorAll('button, [role="button"], a[role="button"], input[type="submit"]');
+                for (const b of els) {
+                  const t = (b.innerText || b.value || '').trim().toLowerCase();
+                  if (/continuar|continue|seguir|proceed|iniciar sesion|log in|acceder/.test(t)) { b.click(); return t; }
+                }
+                return null;
+              }).catch(() => null);
+
+              if (clickedContinue) {
+                console.log(`[FB Login] Identity page: clicked "${clickedContinue}" for ${profile.name} — waiting...`);
+                await page.waitForTimeout(5000);
+                const u2 = page.url();
+                if (u2.includes('facebook.com') && !u2.includes('login') && !u2.includes('checkpoint') && !u2.includes('two_factor') && !u2.includes('two_step')) {
+                  console.log(`[FB Login] Continue worked — ${profile.name} logged in`);
+                  await dismissFacebookPopups(page);
+                  if (loginSuccessCallback) loginSuccessCallback(profile.id);
+                } else {
+                  console.log(`[FB Login] Still needs attention for ${profile.name} — leaving browser open`);
+                  if (loginFailCallback) loginFailCallback(profile.id, 'Requiere confirmacion manual');
+                }
+                return;
+              }
+
+              console.log(`[FB Login] Confirmation page for ${profile.name} — leaving browser open for manual review (no auto-close)`);
+              if (loginFailCallback) loginFailCallback(profile.id, 'Requiere confirmacion manual');
               return;
             }
 
@@ -2303,4 +2337,12 @@ function getCapsolverKey() {
   return capsolverApiKey;
 }
 
-module.exports = { launchBrowser, closeBrowser, getActiveBrowsers, onLoginSuccess, onLoginFail, setCapsolverKey, getCapsolverKey };
+function setCaptchaProvider(provider) {
+  captchaProvider = provider === 'omocaptcha' ? 'omocaptcha' : 'capsolver';
+}
+
+function getCaptchaProvider() {
+  return captchaProvider;
+}
+
+module.exports = { launchBrowser, closeBrowser, getActiveBrowsers, onLoginSuccess, onLoginFail, setCapsolverKey, getCapsolverKey, setCaptchaProvider, getCaptchaProvider };

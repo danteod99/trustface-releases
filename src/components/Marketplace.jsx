@@ -479,23 +479,41 @@ export default function Marketplace({ tier }) {
                     <textarea value={publishForm.description} onChange={e => setPublishForm(p => ({...p, description: e.target.value}))} rows={2} placeholder="Producto en excelente estado..." className={INPUT_CLASS + ' resize-none'} />
                   </div>
                   <div className="col-span-2">
-                    <label className={LABEL_CLASS}>Fotos (arrastra una carpeta aqui o escribe la ruta)</label>
-                    <input type="text" value={publishForm.photos}
-                      onChange={e => setPublishForm(p => ({...p, photos: e.target.value}))}
-                      onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = '#3b82f6'; }}
-                      onDragLeave={e => { e.currentTarget.style.borderColor = ''; }}
-                      onDrop={e => {
-                        e.preventDefault();
-                        e.currentTarget.style.borderColor = '';
-                        const files = e.dataTransfer.files;
-                        if (files.length > 0) {
-                          // Get the path from the dropped file/folder
-                          const path = files[0].path || files[0].name;
-                          setPublishForm(p => ({...p, photos: path}));
-                        }
-                      }}
-                      placeholder="Arrastra una carpeta aqui o escribe /ruta/carpeta-fotos"
-                      className={INPUT_CLASS} />
+                    <label className={LABEL_CLASS}>Fotos (selecciona una carpeta, arrastrala aqui o escribe la ruta)</label>
+                    <div className="flex gap-2">
+                      <input type="text" value={publishForm.photos}
+                        onChange={e => setPublishForm(p => ({...p, photos: e.target.value}))}
+                        onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = '#3b82f6'; }}
+                        onDragLeave={e => { e.currentTarget.style.borderColor = ''; }}
+                        onDrop={e => {
+                          e.preventDefault();
+                          e.currentTarget.style.borderColor = '';
+                          const files = e.dataTransfer.files;
+                          if (files.length > 0) {
+                            // Get the path from the dropped file/folder
+                            const path = files[0].path || files[0].name;
+                            setPublishForm(p => ({...p, photos: path}));
+                          }
+                        }}
+                        placeholder="Selecciona una carpeta o arrastrala aqui"
+                        className={INPUT_CLASS + ' flex-1'} />
+                      <button type="button"
+                        onClick={async () => {
+                          const paths = await window.api.selectFiles?.({ multiple: true });
+                          if (paths && paths.length) setPublishForm(p => ({...p, photos: paths.join(', ')}));
+                        }}
+                        className={BTN_SECONDARY + ' whitespace-nowrap bg-trust-surface border border-trust-border text-trust-dark hover:border-blue-500'}>
+                        🖼️ Seleccionar fotos
+                      </button>
+                      <button type="button"
+                        onClick={async () => {
+                          const folder = await window.api.selectFolder();
+                          if (folder) setPublishForm(p => ({...p, photos: folder}));
+                        }}
+                        className={BTN_SECONDARY + ' whitespace-nowrap bg-trust-surface border border-trust-border text-trust-dark hover:border-blue-500'}>
+                        📁 Seleccionar carpeta
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <button onClick={handlePublish} disabled={running || !publishForm.title || selectedProfiles.length === 0} className={BTN_PRIMARY + ' mt-4'}>

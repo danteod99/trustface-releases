@@ -1,7 +1,7 @@
 {
   "name": "trustface-desktop",
-  "version": "1.6.1",
-  "description": "TrustFace Desktop — Facebook Multi-Account Manager with Marketplace Automation",
+  "version": "1.6.4",
+  "description": "TrustFace Desktop \u2014 Facebook Multi-Account Manager with Marketplace Automation",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -57,7 +57,10 @@
       "output": "release"
     },
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "icon": "assets/icon.icns",
       "artifactName": "TrustFace-Desktop-${version}-${arch}.${ext}"
     },

@@ -144,7 +144,7 @@ export default function Sidebar({ activeTab, setActiveTab, tabs, tier, user, bal
         {user && (
           <a
             href="#"
-            onClick={(e) => { e.preventDefault(); window.api.openExternal?.('https://www.trustmind.online/smm/funds'); }}
+            onClick={(e) => { e.preventDefault(); window.api.openExternal?.('https://wa.me/51931119176'); }}
             className="flex items-center justify-between gap-2 mb-2 p-2 rounded-lg bg-trust-green/10 border border-trust-green/30 hover:bg-trust-green/20 transition-colors no-underline"
             title="Recargar saldo en el panel"
           >

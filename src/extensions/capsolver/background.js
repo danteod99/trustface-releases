@@ -2,20 +2,38 @@
 // Reads API key from config.js and handles CAPTCHA solving requests
 
 let CAPSOLVER_API_KEY = '';
+let CAPTCHA_PROVIDER = 'capsolver';
 
-// Load API key from storage
-chrome.storage.local.get(['capsolverApiKey'], (result) => {
+// URL base segun el proveedor elegido (ambos usan el mismo formato createTask/getTaskResult)
+const PROVIDER_BASE = {
+  capsolver: 'https://api.capsolver.com',
+  omocaptcha: 'https://api.omocaptcha.com/v2',
+};
+function apiBase() {
+  return PROVIDER_BASE[CAPTCHA_PROVIDER] || PROVIDER_BASE.capsolver;
+}
+
+// Load API key + provider from storage
+chrome.storage.local.get(['capsolverApiKey', 'captchaProvider'], (result) => {
   if (result.capsolverApiKey) {
     CAPSOLVER_API_KEY = result.capsolverApiKey;
-    console.log('[CapSolver] API key loaded');
+    console.log('[Captcha] API key loaded');
+  }
+  if (result.captchaProvider) {
+    CAPTCHA_PROVIDER = result.captchaProvider;
+    console.log('[Captcha] Provider:', CAPTCHA_PROVIDER);
   }
 });
 
-// Listen for API key updates
+// Listen for API key / provider updates
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.capsolverApiKey) {
     CAPSOLVER_API_KEY = changes.capsolverApiKey.newValue || '';
-    console.log('[CapSolver] API key updated');
+    console.log('[Captcha] API key updated');
+  }
+  if (changes.captchaProvider) {
+    CAPTCHA_PROVIDER = changes.captchaProvider.newValue || 'capsolver';
+    console.log('[Captcha] Provider updated:', CAPTCHA_PROVIDER);
   }
 });
 
@@ -42,7 +60,7 @@ async function solveCaptcha(data) {
   const { type, websiteURL, websiteKey, funcaptchaSubdomain } = data;
 
   // Create task
-  const createResponse = await fetch('https://api.capsolver.com/createTask', {
+  const createResponse = await fetch(apiBase() + '/createTask', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -67,7 +85,7 @@ async function solveCaptcha(data) {
   for (let i = 0; i < 60; i++) {
     await new Promise((r) => setTimeout(r, 2000));
 
-    const resultResponse = await fetch('https://api.capsolver.com/getTaskResult', {
+    const resultResponse = await fetch(apiBase() + '/getTaskResult', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

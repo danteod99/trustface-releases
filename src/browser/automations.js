@@ -870,7 +870,6 @@ async function followByHashtag() { return { followed: 0 }; }
 async function sendDM() { return { sent: false }; }
 async function uploadPost() { return { success: false }; }
 async function editProfile() { return { success: false }; }
-async function sharePost() { return { success: false }; }
 async function buffPost() { return { success: false }; }
 async function followSuggestions() { return { followed: 0 }; }
 async function searchAndFollow() { return { followed: 0 }; }
