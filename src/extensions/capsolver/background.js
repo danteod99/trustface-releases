@@ -13,7 +13,26 @@ function apiBase() {
   return PROVIDER_BASE[CAPTCHA_PROVIDER] || PROVIDER_BASE.capsolver;
 }
 
-// Load API key + provider from storage
+// Cargar API key + proveedor desde config.json (lo escribe la app de escritorio
+// antes de lanzar el navegador). ESTE es el metodo fiable: inyectar via
+// chrome.storage desde la pagina web NO funciona (las paginas no tienen chrome.storage).
+async function loadConfigFile() {
+  try {
+    const res = await fetch(chrome.runtime.getURL('config.json'));
+    if (!res.ok) return false;
+    const cfg = await res.json();
+    if (cfg.apiKey) { CAPSOLVER_API_KEY = cfg.apiKey; console.log('[Captcha] API key cargada desde config.json'); }
+    if (cfg.provider) { CAPTCHA_PROVIDER = cfg.provider; console.log('[Captcha] Proveedor:', CAPTCHA_PROVIDER); }
+    return !!cfg.apiKey;
+  } catch (err) {
+    console.log('[Captcha] No se pudo leer config.json:', err.message);
+    return false;
+  }
+}
+// Se ejecuta cada vez que arranca el service worker (incluido al despertar en MV3).
+loadConfigFile();
+
+// Respaldo: tambien leer de chrome.storage por si algun flujo la escribe ahi.
 chrome.storage.local.get(['capsolverApiKey', 'captchaProvider'], (result) => {
   if (result.capsolverApiKey) {
     CAPSOLVER_API_KEY = result.capsolverApiKey;
@@ -54,7 +73,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function solveCaptcha(data) {
   if (!CAPSOLVER_API_KEY) {
-    throw new Error('CapSolver API key not configured');
+    // El service worker pudo haber despertado sin la key en memoria → reintentar.
+    await loadConfigFile();
+  }
+  if (!CAPSOLVER_API_KEY) {
+    throw new Error('API key de captcha no configurada (revisa config.json)');
   }
 
   const { type, websiteURL, websiteKey, funcaptchaSubdomain } = data;

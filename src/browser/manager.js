@@ -531,9 +531,26 @@ async function launchBrowser(profile) {
     }
   }
 
-  // CapSolver extension path
-  const capsolverPath = path.join(__dirname, 'extensions', 'capsolver');
-  const hasCapsolverExt = fs.existsSync(path.join(capsolverPath, 'manifest.json'));
+  // CapSolver extension path.
+  // En produccion el codigo vive dentro de app.asar (read-only): Chrome NO puede
+  // cargar una extension desde asar ni podemos escribir config.json ahi. Por eso
+  // copiamos la extension a un directorio escribible (userData) y la cargamos desde ahi.
+  const capsolverSrc = path.join(__dirname, 'extensions', 'capsolver');
+  const hasCapsolverExt = fs.existsSync(path.join(capsolverSrc, 'manifest.json'));
+  let capsolverPath = capsolverSrc;
+  if (hasCapsolverExt) {
+    try {
+      const dest = path.join(app.getPath('userData'), 'capsolver-ext');
+      fs.mkdirSync(dest, { recursive: true });
+      for (const f of fs.readdirSync(capsolverSrc)) {
+        const s = path.join(capsolverSrc, f);
+        try { if (fs.statSync(s).isFile()) fs.copyFileSync(s, path.join(dest, f)); } catch { /* noop */ }
+      }
+      capsolverPath = dest; // directorio escribible, fuera del asar
+    } catch (err) {
+      console.log('[CapSolver] No se pudo preparar la extension en userData:', err.message);
+    }
+  }
 
   const launchOptions = {
     executablePath,
