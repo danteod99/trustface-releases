@@ -301,16 +301,51 @@ app.whenReady().then(() => {
       return null;
     }
   }
+  // Chequeo directo via GitHub API — NO depende de la firma de la app.
+  // electron-updater falla en Mac sin firmar, por lo que las versiones viejas
+  // nunca se enteraban de una nueva. Esto garantiza que SIEMPRE vean el aviso.
+  function cmpVersions(a, b) {
+    const pa = String(a).replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
+    const pb = String(b).replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
+    for (let i = 0; i < 3; i++) {
+      if ((pa[i] || 0) > (pb[i] || 0)) return 1;
+      if ((pa[i] || 0) < (pb[i] || 0)) return -1;
+    }
+    return 0;
+  }
+  async function checkGithubLatest(reason) {
+    try {
+      const res = await fetch('https://api.github.com/repos/danteod99/trustface-releases/releases/latest', {
+        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'TrustFace-Desktop' },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const latest = (data.tag_name || '').replace(/^v/, '');
+      const current = app.getVersion();
+      console.log(`[Updater] github check (${reason}): current=${current} latest=${latest}`);
+      if (latest && cmpVersions(latest, current) > 0 && mainWindow) {
+        mainWindow.webContents.send('updater:update-available', { version: latest });
+      }
+    } catch (e) {
+      console.error(`[Updater] github check (${reason}) failed:`, e.message);
+    }
+  }
   if (app.isPackaged) {
-    setTimeout(() => safeCheckUpdates('startup'), 3000);
-    setInterval(() => safeCheckUpdates('periodic-30min'), 30 * 60 * 1000);
+    setTimeout(() => { safeCheckUpdates('startup'); checkGithubLatest('startup'); }, 3000);
+    setInterval(() => { safeCheckUpdates('periodic-30min'); checkGithubLatest('periodic-30min'); }, 30 * 60 * 1000);
   }
   ipcMain.handle('updater:check', async () => { try { const r = await autoUpdater.checkForUpdates(); return { success: true, updateInfo: r?.updateInfo, currentVersion: app.getVersion() }; } catch (e) { return { success: false, error: e.message }; } });
   ipcMain.handle('updater:download', async () => { try { await autoUpdater.downloadUpdate(); return { success: true }; } catch (e) { return { success: false, error: e.message }; } });
   ipcMain.handle('updater:open-release', async () => {
+    // Obtener la ultima version via GitHub API (no depende de la firma).
+    let version = app.getVersion();
     try {
-      const r = await autoUpdater.checkForUpdates();
-      const version = r?.updateInfo?.version || app.getVersion();
+      const res = await fetch('https://api.github.com/repos/danteod99/trustface-releases/releases/latest', {
+        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'TrustFace-Desktop' },
+      });
+      if (res.ok) { const d = await res.json(); version = (d.tag_name || '').replace(/^v/, '') || version; }
+    } catch { /* usa la version actual como respaldo */ }
+    try {
       const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
       const file = process.platform === 'darwin'
         ? `TrustFace-Desktop-${version}-${arch}.dmg`
