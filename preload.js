@@ -142,12 +142,14 @@ contextBridge.exposeInMainWorld('api', {
   fbCreatePost: (profileId, content, opts) => ipcRenderer.invoke('fb:create-post', profileId, content, opts),
   fbPostGroup: (profileId, groupUrl, content) => ipcRenderer.invoke('fb:post-group', profileId, groupUrl, content),
   fbLike: (profileId, targetUrl, max) => ipcRenderer.invoke('fb:like', profileId, targetUrl, max),
+  fbLikeComment: (profileId, postUrl, commentMatch) => ipcRenderer.invoke('fb:like-comment', profileId, postUrl, commentMatch),
   fbComment: (profileId, targetUrl, comments, max) => ipcRenderer.invoke('fb:comment', profileId, targetUrl, comments, max),
   fbShare: (profileId, postUrl) => ipcRenderer.invoke('fb:share', profileId, postUrl),
   fbJoinGroup: (profileId, groupUrl) => ipcRenderer.invoke('fb:join-group', profileId, groupUrl),
   fbAddFriends: (profileId, urls, max) => ipcRenderer.invoke('fb:add-friends', profileId, urls, max),
   fbScrapeGroup: (profileId, groupUrl, max) => ipcRenderer.invoke('fb:scrape-group', profileId, groupUrl, max),
   fbWarmup: (profileId, opts) => ipcRenderer.invoke('fb:warmup', profileId, opts),
+  fbEditProfile: (profileId, opts) => ipcRenderer.invoke('fb:edit-profile', profileId, opts),
   runAutomation: (profileId, actionId, config) => ipcRenderer.invoke('fb:run-automation', profileId, actionId, config),
 
   // Facebook Pages
@@ -168,6 +170,9 @@ contextBridge.exposeInMainWorld('api', {
   checkForUpdate: () => ipcRenderer.invoke('updater:check'),
   downloadUpdate: () => ipcRenderer.invoke('updater:download'),
   installUpdate: () => ipcRenderer.invoke('updater:install'),
+  // Descarga de Chrome for Testing (motor de captcha)
+  onCftProgress: (cb) => { ipcRenderer.on('cft:progress', (_e, data) => cb(data)); },
+
   onUpdateAvailable: (cb) => { ipcRenderer.on('updater:update-available', (_e, info) => cb(info)); },
   onUpdateDownloadProgress: (cb) => { ipcRenderer.on('updater:download-progress', (_e, p) => cb(p)); },
   onUpdateDownloaded: (cb) => { ipcRenderer.on('updater:update-downloaded', (_e, info) => cb(info)); },

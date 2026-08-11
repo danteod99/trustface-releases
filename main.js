@@ -26,7 +26,7 @@ function loadEnv() {
   } catch { /* .env not found, use process.env */ }
 }
 loadEnv();
-const { launchBrowser, closeBrowser, getActiveBrowsers, onLoginSuccess, onLoginFail, setCapsolverKey, getCapsolverKey, setCaptchaProvider, getCaptchaProvider } = require('./src/browser/manager');
+const { launchBrowser, closeBrowser, getActiveBrowsers, onLoginSuccess, onLoginFail, setCapsolverKey, getCapsolverKey, setCaptchaProvider, getCaptchaProvider, setCftProgressCallback } = require('./src/browser/manager');
 const {
   autoLike, autoFollow, autoUnfollow, autoViewStories,
   autoVisitProfiles, autoComment, extractFollowers,
@@ -256,6 +256,11 @@ app.whenReady().then(() => {
   }
 
   createWindow();
+
+  // Progreso de descarga de Chrome for Testing → renderer
+  setCftProgressCallback((data) => {
+    if (mainWindow) mainWindow.webContents.send('cft:progress', data);
+  });
 
   // Start Warm-up Background Executor
   startWarmupExecutor(getDb, (profileId, event, data) => {
@@ -1866,13 +1871,25 @@ ipcMain.handle('fb:like', async (_, profileId, targetUrl, maxLikes) => {
   } catch (err) { return { error: err.message }; }
 });
 
+ipcMain.handle('fb:like-comment', async (_, profileId, postUrl, commentMatch) => {
+  try {
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
+    const result = await fb.likeComment(_page, postUrl, commentMatch);
+    if (Number(result?.liked || 0) > 0) await chargeUserAction('fb_like', 1);
+    return result;
+  } catch (err) { return { error: err.message }; }
+});
+
 ipcMain.handle('fb:comment', async (_, profileId, targetUrl, comments, maxComments) => {
   try {
     const _entry = getActiveBrowsers().get(profileId);
     if (!_entry?.context) return { error: 'Browser not running' };
     const _page = _entry.context.pages()[0];
     if (!_page) return { error: 'No page available' };
-    const result = await fb.commentOnPosts(_page, targetUrl, comments, maxComments);
+    const result = await fb.commentOnPosts(_page, targetUrl, comments);
     const n = Number(result?.commented || 0);
     if (n > 0) await chargeUserAction('fb_comment', n);
     return result;
@@ -1936,23 +1953,38 @@ ipcMain.handle('fb:warmup', async (_, profileId, options) => {
   } catch (err) { return { error: err.message }; }
 });
 
+ipcMain.handle('fb:edit-profile', async (_, profileId, options) => {
+  try {
+    const _entry = getActiveBrowsers().get(profileId);
+    if (!_entry?.context) return { error: 'Browser not running' };
+    const _page = _entry.context.pages()[0];
+    if (!_page) return { error: 'No page available' };
+    return await fb.editProfileFull(_page, options);
+  } catch (err) { return { error: err.message }; }
+});
+
 // ─── AI Text Generation ─────────────────────────────────────────────
 ipcMain.handle('ai:generate-text', async (_, provider, apiKey, prompt) => {
   const https = require('https');
 
-  // Use provided key, or fallback to env var, or settings
+  // Use provided key, or fallback to env var, or settings.
+  // Si el llamador NO manda key propia, usamos el PROVEEDOR y la key guardados en
+  // Configuracion (asi toda la app respeta tu eleccion: OpenAI / Anthropic / Gemini,
+  // aunque el llamador tenga un proveedor por defecto hardcodeado).
   let resolvedKey = apiKey;
   if (!resolvedKey) {
     try {
       const db = getDb();
-      const row = db.prepare("SELECT value FROM settings WHERE key = 'ai_api_key'").get();
-      if (row) resolvedKey = row.value;
+      const keyRow = db.prepare("SELECT value FROM settings WHERE key = 'ai_api_key'").get();
+      if (keyRow) resolvedKey = keyRow.value;
+      const provRow = db.prepare("SELECT value FROM settings WHERE key = 'ai_provider'").get();
+      if (provRow && provRow.value) provider = provRow.value;
     } catch {}
   }
-  if (!resolvedKey) resolvedKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || '';
+  if (!resolvedKey) resolvedKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || '';
 
   if (!resolvedKey) {
-    return { error: 'No hay API key configurado. Ve a Configuracion para agregar tu API key de Anthropic o OpenAI.' };
+    return { error: 'No hay API key configurado. Ve a Configuracion para agregar tu API key de Anthropic, OpenAI o Gemini.' };
   }
 
   return new Promise((resolve) => {
@@ -1970,12 +2002,23 @@ ipcMain.handle('ai:generate-text', async (_, provider, apiKey, prompt) => {
         max_tokens: 256,
         messages: [{ role: 'user', content: prompt }],
       });
+    } else if (provider === 'gemini') {
+      // Google Gemini (Generative Language API)
+      url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+      headers = {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': resolvedKey,
+      };
+      body = JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 256 },
+      });
     } else {
       // OpenAI
       url = 'https://api.openai.com/v1/chat/completions';
       headers = {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${resolvedKey}`,
       };
       body = JSON.stringify({
         model: 'gpt-4o-mini',
@@ -1987,7 +2030,7 @@ ipcMain.handle('ai:generate-text', async (_, provider, apiKey, prompt) => {
     const parsedUrl = new URL(url);
     const options = {
       hostname: parsedUrl.hostname,
-      path: parsedUrl.pathname,
+      path: parsedUrl.pathname + parsedUrl.search,
       method: 'POST',
       headers: { ...headers, 'Content-Length': Buffer.byteLength(body) },
     };
@@ -2001,6 +2044,9 @@ ipcMain.handle('ai:generate-text', async (_, provider, apiKey, prompt) => {
           let text = '';
           if (provider === 'anthropic') {
             text = json.content?.[0]?.text || '';
+          } else if (provider === 'gemini') {
+            text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (!text && json.error) return resolve({ error: json.error.message || 'Gemini error' });
           } else {
             text = json.choices?.[0]?.message?.content || '';
           }
@@ -2101,12 +2147,14 @@ ipcMain.handle('fb:run-automation', async (_, profileId, actionId, config) => {
     switch (actionId) {
       case 'mp-create': result = await fb.marketplaceCreateListing(page, config); break;
       case 'like': return await fb.likePosts(page, config.likeTargetUrl || 'https://facebook.com', config.maxLikes || 10);
-      case 'comment': return await fb.commentOnPosts(page, config.commentTargetUrl || 'https://facebook.com', (config.comments || '').split('\n'), config.maxComments || 5);
+      case 'like-comment': return await fb.likeComment(page, config.lcPostUrl || '', config.lcCommentMatch || '');
+      case 'comment': return await fb.commentOnPosts(page, config.commentTargetUrl || 'https://facebook.com', (config.comments || '').split('\n'));
       case 'dm-send': return await fb.sendMessage(page, config.dmRecipient, config.dmMessage);
       case 'post-create': return await fb.createPost(page, { text: config.postText, photos: [] });
       case 'add-friend': return await fb.addFriends(page, (config.friendUrls || '').split('\n'), config.maxRequests || 20);
       case 'group-join': return await fb.joinGroup(page, config.groupUrl || '');
       case 'warmup': return await fb.warmupAccount(page, config);
+      case 'edit-profile': return await fb.editProfileFull(page, { photoFolder: config.photoFolder, bios: config.bios });
       default: return { error: `Unknown action: ${actionId}` };
     }
     return await handleMarketplaceResult(result, profileId);

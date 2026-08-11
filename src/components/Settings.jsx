@@ -143,13 +143,14 @@ export default function Settings({ tier, user, onUpgrade }) {
             <select value={aiProvider} onChange={e => setAiProvider(e.target.value)} className={INPUT_CLASS}>
               <option value="anthropic">Anthropic (Claude)</option>
               <option value="openai">OpenAI (GPT)</option>
+              <option value="gemini">Google (Gemini)</option>
             </select>
           </div>
           <div>
             <label className={LABEL_CLASS}>API Key</label>
-            <input type="password" value={aiApiKey} onChange={e => setAiApiKey(e.target.value)} placeholder={aiProvider === 'anthropic' ? 'sk-ant-...' : 'sk-...'} className={INPUT_CLASS} />
+            <input type="password" value={aiApiKey} onChange={e => setAiApiKey(e.target.value)} placeholder={aiProvider === 'anthropic' ? 'sk-ant-...' : aiProvider === 'gemini' ? 'AIza...' : 'sk-...'} className={INPUT_CLASS} />
           </div>
-          <p className="text-[11px] text-trust-muted">Obtiene tu key en {aiProvider === 'anthropic' ? 'console.anthropic.com' : 'platform.openai.com'}</p>
+          <p className="text-[11px] text-trust-muted">Obtiene tu key en {aiProvider === 'anthropic' ? 'console.anthropic.com' : aiProvider === 'gemini' ? 'aistudio.google.com/apikey' : 'platform.openai.com'}</p>
           <button onClick={handleSave} className="mt-3 px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors">
             {saved ? 'Guardado' : 'Guardar API Key'}
           </button>

@@ -14,6 +14,11 @@ const activeBrowsers = new Map();
 let capsolverApiKey = '';
 let captchaProvider = 'capsolver';
 
+// Chrome for Testing (necesario para cargar la extensión de captcha)
+const { ensureChromeForTesting } = require('./chrome-for-testing');
+let cftProgressCallback = null;
+function setCftProgressCallback(cb) { cftProgressCallback = cb; }
+
 // ─── Grid Layout for Browser Windows ────────────────────────────────
 // Mobile-sized windows arranged in a grid so multiple are visible at once
 const BROWSER_WIDTH = 360;
@@ -507,13 +512,6 @@ async function launchBrowser(profile) {
     throw new Error('Este perfil ya tiene un navegador abierto');
   }
 
-  const executablePath = findChromiumPath();
-  if (!executablePath) {
-    throw new Error(
-      'No se encontr\u00f3 Chrome/Chromium instalado. Instala Google Chrome para continuar.'
-    );
-  }
-
   const profileDir = getProfileDir(profile.id);
 
   // Persistent user-agent: use stored UA from profile, or pick a random one
@@ -535,7 +533,10 @@ async function launchBrowser(profile) {
   // En produccion el codigo vive dentro de app.asar (read-only): Chrome NO puede
   // cargar una extension desde asar ni podemos escribir config.json ahi. Por eso
   // copiamos la extension a un directorio escribible (userData) y la cargamos desde ahi.
-  const capsolverSrc = path.join(__dirname, 'extensions', 'capsolver');
+  // La extensión vive en src/extensions/capsolver; __dirname es src/browser,
+  // por eso hay que subir un nivel (.. ). Antes apuntaba a src/browser/extensions
+  // (inexistente) → la extensión NUNCA se cargaba y ningún captcha se resolvía.
+  const capsolverSrc = path.join(__dirname, '..', 'extensions', 'capsolver');
   const hasCapsolverExt = fs.existsSync(path.join(capsolverSrc, 'manifest.json'));
   let capsolverPath = capsolverSrc;
   if (hasCapsolverExt) {
@@ -550,6 +551,35 @@ async function launchBrowser(profile) {
     } catch (err) {
       console.log('[CapSolver] No se pudo preparar la extension en userData:', err.message);
     }
+  }
+
+  // Selección del navegador:
+  // - Si el captcha-solver está activo (extensión + API key), hay que usar
+  //   Chrome for Testing, porque el Chrome del sistema (v137+) ya no carga
+  //   extensiones por línea de comandos. Se descarga solo la primera vez.
+  // - Si no, usamos el Chrome del sistema (más liviano, no requiere descarga).
+  const captchaActivo = hasCapsolverExt && !!capsolverApiKey;
+  console.log(`[CfT] captchaActivo=${captchaActivo} (extensión=${hasCapsolverExt}, key=${!!capsolverApiKey})`);
+  let executablePath = null;
+  if (captchaActivo) {
+    try {
+      executablePath = await ensureChromeForTesting((pct, downloaded, total) => {
+        if (typeof cftProgressCallback === 'function') {
+          cftProgressCallback({ profileId: profile.id, pct, downloaded, total });
+        }
+      });
+    } catch (err) {
+      console.warn('[CfT] Falló Chrome for Testing, usando Chrome del sistema:', err.message);
+      executablePath = null; // fallback abajo
+    }
+  }
+  if (!executablePath) {
+    executablePath = findChromiumPath();
+  }
+  if (!executablePath) {
+    throw new Error(
+      'No se encontró Chrome/Chromium instalado. Instala Google Chrome para continuar.'
+    );
   }
 
   const launchOptions = {
@@ -623,7 +653,9 @@ async function launchBrowser(profile) {
     locale: 'es-419',
     timezoneId: profile.timezone || 'America/Lima',
     colorScheme: 'dark',
-    ignoreDefaultArgs: ['--enable-automation'],
+    // Quitamos --disable-extensions solo cuando vamos a cargar la extensión de
+    // captcha, si no Chrome la ignora aunque usemos --load-extension.
+    ignoreDefaultArgs: captchaActivo ? ['--enable-automation', '--disable-extensions'] : ['--enable-automation'],
   });
 
   // Generate unique fingerprint for this profile
@@ -1202,9 +1234,9 @@ async function launchBrowser(profile) {
         }
 
         if (state === 'checkpoint') {
-          console.log(`[FB Login] CHECKPOINT — ${profile.name} — closing browser`);
-          if (loginFailCallback) loginFailCallback(profile.id, 'Verificacion de seguridad requerida');
-          await closeBrowser(profile.id);
+          // Un checkpoint suele traer captcha o verificación manual. En vez de
+          // cerrar, dejamos el navegador ABIERTO para resolverlo (extensión + a mano).
+          console.log(`[FB Login] CHECKPOINT — ${profile.name} — dejando el navegador ABIERTO para verificación`);
           return;
         }
 
@@ -1699,9 +1731,13 @@ async function handleFb2FA(page, profile) {
       await handleEmailVerification(page, profile);
       return;
     }
-    console.log(`[FB 2FA] No 2FA secret configured for ${profile.name} — closing browser`);
-    if (loginFailCallback) loginFailCallback(profile.id, '2FA requerido — sin secreto TOTP configurado');
-    await closeBrowser(profile.id);
+    // Antes se cerraba el navegador de inmediato aquí. Eso cortaba el captcha
+    // (reCAPTCHA en two_step_verification) antes de que la extensión lo resolviera
+    // y no dejaba completar la verificación a mano. Ahora lo dejamos ABIERTO:
+    //  - la extensión CapSolver tiene tiempo de resolver el captcha
+    //  - el usuario puede terminar la verificación 2FA manualmente
+    // El navegador queda abierto hasta que el usuario lo cierre con "Cerrar".
+    console.log(`[FB 2FA] Sin secreto TOTP para ${profile.name} — dejando el navegador ABIERTO para captcha/verificación manual`);
     return;
   }
 
@@ -1950,9 +1986,10 @@ async function handleFb2FA(page, profile) {
     }
 
     if (!tfaInput) {
-      console.log(`[FB 2FA] No code input found for ${profile.name} — closing browser`);
-      if (loginFailCallback) loginFailCallback(profile.id, '2FA requerido — no se encontro campo de codigo');
-      await closeBrowser(profile.id);
+      // Normalmente no hay campo de código porque un captcha (reCAPTCHA) lo está
+      // bloqueando. Antes se cerraba el navegador; ahora lo dejamos ABIERTO para
+      // que la extensión resuelva el captcha y/o el usuario complete manualmente.
+      console.log(`[FB 2FA] No se encontró campo de código para ${profile.name} (posible captcha) — dejando el navegador ABIERTO`);
       return;
     }
 
@@ -2362,4 +2399,4 @@ function getCaptchaProvider() {
   return captchaProvider;
 }
 
-module.exports = { launchBrowser, closeBrowser, getActiveBrowsers, onLoginSuccess, onLoginFail, setCapsolverKey, getCapsolverKey, setCaptchaProvider, getCaptchaProvider };
+module.exports = { launchBrowser, closeBrowser, getActiveBrowsers, onLoginSuccess, onLoginFail, setCapsolverKey, getCapsolverKey, setCaptchaProvider, getCaptchaProvider, setCftProgressCallback };

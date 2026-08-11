@@ -22,6 +22,7 @@ const FB_ACTIONS = [
 
   // Engagement
   { id: 'like', name: 'Like en Posts', icon: '👍', color: 'text-blue-500', category: 'Engagement', desc: 'Dar likes a posts de un perfil o pagina' },
+  { id: 'like-comment', name: 'Like a Comentario', icon: '👍', color: 'text-blue-400', category: 'Engagement', desc: 'Cada cuenta da like a UN comentario especifico de un post' },
   { id: 'comment', name: 'Comentar', icon: '💬', color: 'text-yellow-500', category: 'Engagement', desc: 'Comentar en posts con templates rotativos' },
   { id: 'add-friend', name: 'Agregar Amigos', icon: '➕', color: 'text-green-500', category: 'Engagement', desc: 'Enviar solicitudes de amistad masivas' },
 
@@ -31,6 +32,7 @@ const FB_ACTIONS = [
 
   // Account
   { id: 'warmup', name: 'Warm-up Cuenta', icon: '🔥', color: 'text-orange-500', category: 'Cuenta', desc: 'Calentar cuenta: scroll, likes, stories' },
+  { id: 'edit-profile', name: 'Editar Perfil', icon: '🖼️', color: 'text-pink-500', category: 'Cuenta', desc: 'Cambiar foto de perfil (distinta por cuenta) y bio' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -90,8 +92,8 @@ const ACTION_FIELDS = {
   'dm-mass': [
     { key: 'dmRecipients', label: 'Destinatarios (uno por linea)', type: 'textarea', placeholder: 'usuario1\nusuario2\nusuario3', rows: 5 },
     { key: 'useAI', label: 'Generar mensaje con IA', type: 'checkbox', default: false },
-    { key: 'aiApiKey', label: 'API Key (OpenAI o Anthropic)', type: 'text', placeholder: 'sk-...', mono: true, showIf: 'useAI' },
-    { key: 'aiProvider', label: 'Proveedor IA', type: 'select', options: [{ value: 'openai', label: 'OpenAI (GPT)' }, { value: 'anthropic', label: 'Anthropic (Claude)' }], default: 'openai', showIf: 'useAI' },
+    { key: 'aiApiKey', label: 'API Key (OpenAI, Anthropic o Gemini)', type: 'text', placeholder: 'sk-...  o  AIza... (Gemini)', mono: true, showIf: 'useAI' },
+    { key: 'aiProvider', label: 'Proveedor IA', type: 'select', options: [{ value: 'openai', label: 'OpenAI (GPT)' }, { value: 'anthropic', label: 'Anthropic (Claude)' }, { value: 'gemini', label: 'Google (Gemini)' }], default: 'openai', showIf: 'useAI' },
     { key: 'aiPrompt', label: 'Instruccion para la IA', type: 'textarea', placeholder: 'Genera un DM personalizado para {nombre}. Tono amigable, profesional. Maximo 2 frases.', rows: 3, showIf: 'useAI' },
     { key: 'dmTemplates', label: 'Templates de mensaje (uno por linea)', type: 'textarea', placeholder: 'Hola {nombre}, vi tu perfil y...\nHola! Te contacto porque...', rows: 3, hideIf: 'useAI' },
     { key: 'dmMinDelay', label: 'Delay minimo (seg)', type: 'number', min: 1, max: 300, default: 30 },
@@ -113,22 +115,25 @@ const ACTION_FIELDS = {
     { key: 'sharePostUrl', label: 'URL del Post a Compartir', type: 'text', placeholder: 'https://facebook.com/post/...' },
   ],
   'like': [
-    { key: 'likeTargetUrl', label: 'URL del Perfil/Pagina', type: 'text', placeholder: 'https://facebook.com/pagina' },
-    { key: 'maxLikes', label: 'Max Likes', type: 'number', min: 1, max: 100, default: 10 },
+    { key: 'likeTargetUrl', label: 'URL (perfil, pagina o POST especifico)', type: 'text', placeholder: 'https://facebook.com/pagina  o  link de un post especifico', hint: 'Si pegas el link de un post, cada cuenta le dara 1 like a ESE post. Si pegas un perfil/pagina, dara likes a varios de sus posts.' },
+    { key: 'maxLikes', label: 'Max Likes (solo para perfil/pagina)', type: 'number', min: 1, max: 100, default: 10 },
+    { key: 'delayMin', label: 'Delay minimo (seg)', type: 'number', min: 1, max: 120, default: 3 },
+    { key: 'delayMax', label: 'Delay maximo (seg)', type: 'number', min: 1, max: 120, default: 10 },
+  ],
+  'like-comment': [
+    { key: 'lcPostUrl', label: 'URL del post donde esta el comentario', type: 'text', placeholder: 'https://facebook.com/.../posts/...' },
+    { key: 'lcCommentMatch', label: 'Comentario a identificar (texto o nombre de quien comento)', type: 'text', placeholder: 'Ej: parte del texto del comentario, o el nombre del autor', hint: 'Cada cuenta seleccionada le dara 1 like al comentario que coincida con este texto/nombre.' },
     { key: 'delayMin', label: 'Delay minimo (seg)', type: 'number', min: 1, max: 120, default: 3 },
     { key: 'delayMax', label: 'Delay maximo (seg)', type: 'number', min: 1, max: 120, default: 10 },
   ],
   'comment': [
-    { key: 'commentTargetUrl', label: 'URL del Perfil/Pagina', type: 'text', placeholder: 'https://facebook.com/pagina' },
+    { key: 'commentTargetUrl', label: 'URL (perfil, pagina o POST especifico)', type: 'text', placeholder: 'https://facebook.com/pagina  o  link de un post especifico', hint: 'Cada cuenta seleccionada deja UN comentario (elegido al azar de tu lista) en el post.' },
     { key: 'useAI', label: 'Generar comentarios con IA', type: 'checkbox', default: false },
-    { key: 'aiApiKey', label: 'API Key (OpenAI o Anthropic)', type: 'text', placeholder: 'sk-...', mono: true, showIf: 'useAI' },
-    { key: 'aiProvider', label: 'Proveedor IA', type: 'select', options: [{ value: 'openai', label: 'OpenAI (GPT)' }, { value: 'anthropic', label: 'Anthropic (Claude)' }], default: 'openai', showIf: 'useAI' },
+    { key: 'aiApiKey', label: 'API Key (OpenAI, Anthropic o Gemini)', type: 'text', placeholder: 'sk-...  o  AIza... (Gemini)', mono: true, showIf: 'useAI' },
+    { key: 'aiProvider', label: 'Proveedor IA', type: 'select', options: [{ value: 'openai', label: 'OpenAI (GPT)' }, { value: 'anthropic', label: 'Anthropic (Claude)' }, { value: 'gemini', label: 'Google (Gemini)' }], default: 'openai', showIf: 'useAI' },
     { key: 'aiPrompt', label: 'Instruccion para la IA', type: 'textarea', placeholder: 'Genera un comentario corto, positivo y natural para un post de Facebook sobre {tema}. Maximo 1 frase. No uses emojis excesivos.', rows: 3, showIf: 'useAI' },
     { key: 'aiLanguage', label: 'Idioma', type: 'select', options: [{ value: 'es', label: 'Espanol' }, { value: 'en', label: 'Ingles' }, { value: 'pt', label: 'Portugues' }], default: 'es', showIf: 'useAI' },
-    { key: 'comments', label: 'Comentarios manuales (uno por linea)', type: 'textarea', placeholder: 'Excelente post!\nMuy bueno, gracias por compartir\nInteresante!', rows: 5, hideIf: 'useAI' },
-    { key: 'maxComments', label: 'Max Comentarios', type: 'number', min: 1, max: 50, default: 5 },
-    { key: 'delayMin', label: 'Delay minimo (seg)', type: 'number', min: 1, max: 120, default: 10 },
-    { key: 'delayMax', label: 'Delay maximo (seg)', type: 'number', min: 1, max: 120, default: 30 },
+    { key: 'comments', label: 'Comentarios (uno por linea, cada cuenta elige uno al azar)', type: 'textarea', placeholder: 'Excelente post!\nMuy bueno, gracias por compartir\nInteresante!', rows: 5, hideIf: 'useAI' },
   ],
   'add-friend': [
     { key: 'friendUrls', label: 'URLs de Perfiles (uno por linea)', type: 'textarea', placeholder: 'https://facebook.com/usuario1\nhttps://facebook.com/usuario2', rows: 5 },
@@ -150,6 +155,10 @@ const ACTION_FIELDS = {
     { key: 'warmupStories', label: 'Ver Stories', type: 'select', options: [{ value: 'Si', label: 'Si' }, { value: 'No', label: 'No' }], default: 'Si' },
     { key: 'delayMin', label: 'Delay minimo (seg)', type: 'number', min: 1, max: 120, default: 3 },
     { key: 'delayMax', label: 'Delay maximo (seg)', type: 'number', min: 1, max: 120, default: 10 },
+  ],
+  'edit-profile': [
+    { key: 'photoFolder', label: 'Carpeta de fotos de perfil', type: 'folder', placeholder: 'Elige una carpeta con varias fotos', hint: 'Cada cuenta agarra una foto DISTINTA al azar de la carpeta. Deja vacio para no cambiar la foto.' },
+    { key: 'bios', label: 'Bios (una por linea, se elige al azar)', type: 'textarea', placeholder: 'Amante del futbol ⚽\nEmprendedor\nViajero 🌎', rows: 4, hint: 'Cada cuenta agarra una bio distinta. Deja vacio para no cambiar la bio.' },
   ],
 };
 
@@ -191,7 +200,7 @@ function getActionById(id) {
 function buildApiConfig(actionId, cfg) {
   const c = { ...cfg };
   // Parse numbers
-  for (const k of ['maxLikes', 'maxComments', 'maxRequests', 'maxMembers', 'mpMaxResults', 'mpPrice', 'warmupScrolls', 'dmMinDelay', 'dmMaxDelay', 'delayMin', 'delayMax']) {
+  for (const k of ['maxLikes', 'maxRequests', 'maxMembers', 'mpMaxResults', 'mpPrice', 'warmupScrolls', 'dmMinDelay', 'dmMaxDelay', 'delayMin', 'delayMax']) {
     if (c[k] !== undefined) c[k] = parseInt(c[k]) || 0;
   }
   // Parse textareas into arrays
@@ -220,11 +229,13 @@ async function executeAction(profileId, actionId, rawConfig) {
     case 'post-group': return window.api.fbPostGroup(profileId, c.groupUrls, { text: c.postText, photos: c.postPhotos });
     case 'post-share': return window.api.fbShare(profileId, c.sharePostUrl);
     case 'like': return window.api.fbLike(profileId, c.likeTargetUrl, c.maxLikes);
-    case 'comment': return window.api.fbComment(profileId, c.commentTargetUrl, c.comments, c.maxComments);
+    case 'like-comment': return window.api.fbLikeComment(profileId, c.lcPostUrl, c.lcCommentMatch);
+    case 'comment': return window.api.fbComment(profileId, c.commentTargetUrl, c.comments);
     case 'add-friend': return window.api.fbAddFriends(profileId, c.friendUrls, c.maxRequests);
     case 'group-join': return window.api.fbJoinGroup(profileId, c.groupUrls);
     case 'group-scrape': return window.api.fbScrapeGroup(profileId, c.groupUrl, c.maxMembers);
     case 'warmup': return window.api.fbWarmup(profileId, { scrolls: c.warmupScrolls, stories: c.warmupStories });
+    case 'edit-profile': return window.api.fbEditProfile(profileId, { photoFolder: c.photoFolder || '', bios: c.bios || '' });
     default: return Promise.resolve();
   }
 }
@@ -318,6 +329,28 @@ function ConfigFields({ actionId, config, onChange }) {
             </div>
           );
         }
+        if (f.type === 'folder') {
+          return (
+            <div key={f.key}>
+              <label className={LABEL_CLASS}>{f.label}</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={config[f.key] || ''}
+                  onChange={(e) => update(f.key, e.target.value)}
+                  placeholder={f.placeholder || ''}
+                  className={INPUT_CLASS + ' flex-1'}
+                />
+                <button
+                  type="button"
+                  onClick={async () => { const dir = await window.api.selectFolder?.(); if (dir) update(f.key, dir); }}
+                  className="px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap bg-trust-surface border border-trust-border text-trust-dark hover:border-blue-500"
+                >📁 Elegir carpeta</button>
+              </div>
+              {f.hint && <p className="text-xs text-trust-muted mt-1">{f.hint}</p>}
+            </div>
+          );
+        }
         // text
         return (
           <div key={f.key}>
@@ -329,6 +362,7 @@ function ConfigFields({ actionId, config, onChange }) {
               placeholder={f.placeholder || ''}
               className={INPUT_CLASS + (f.mono ? ' font-mono' : '')}
             />
+            {f.hint && <p className="text-xs text-trust-muted mt-1">{f.hint}</p>}
           </div>
         );
       })}
@@ -344,7 +378,6 @@ function stepSummary(actionId, cfg) {
   if (cfg.mpSearchQuery) parts.push(`"${cfg.mpSearchQuery}"`);
   if (cfg.dmRecipient) parts.push(cfg.dmRecipient);
   if (cfg.maxLikes) parts.push(`${cfg.maxLikes} likes`);
-  if (cfg.maxComments) parts.push(`${cfg.maxComments} comments`);
   if (cfg.maxRequests) parts.push(`${cfg.maxRequests} requests`);
   if (cfg.delayMin && cfg.delayMax) parts.push(`delay ${cfg.delayMin}-${cfg.delayMax}s`);
   return parts.join(', ') || 'Sin configurar';

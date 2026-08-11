@@ -130,39 +130,52 @@ async function solveCaptcha(data) {
   throw new Error('Timeout waiting for CAPTCHA solution');
 }
 
+// Nombres de tarea por proveedor. CapSolver y OmoCaptcha comparten el formato
+// createTask/getTaskResult, PERO los "type" son distintos:
+//   CapSolver:  ReCaptchaV2TaskProxyLess / FunCaptchaTaskProxyLess ...
+//   OmoCaptcha: RecaptchaV2TokenTask / FuncaptchaTokenTask ...
+// (verificado 2026-08-03: OmoCaptcha rechaza los nombres de CapSolver con
+//  ERROR_TASK_NOT_SUPPORTED; acepta RecaptchaV2TokenTask).
+const TASK_TYPES = {
+  capsolver: {
+    funcaptcha: 'FunCaptchaTaskProxyLess',
+    recaptchav2: 'ReCaptchaV2TaskProxyLess',
+    recaptchav3: 'ReCaptchaV3TaskProxyLess',
+    hcaptcha: 'HCaptchaTaskProxyLess',
+  },
+  omocaptcha: {
+    // Verificado 2026-08-03 contra la API real:
+    //  ✅ reCAPTCHA v2/v3 → *TokenTask (compatibles con esta extensión)
+    //  ⚠️ FunCaptcha (Instagram/Arkose): OmoCaptcha SOLO tiene FuncaptchaImageTask
+    //     (basado en imagen, no token) → esta extensión NO puede resolverlo.
+    //     Para Instagram usar CapSolver (soporta FunCaptcha token).
+    //  ❌ hCaptcha: OmoCaptcha no expone una task token; se deja el nombre
+    //     de CapSolver como fallback (fallará limpio si se intenta).
+    funcaptcha: 'FuncaptchaImageTask',
+    recaptchav2: 'RecaptchaV2TokenTask',
+    recaptchav3: 'RecaptchaV3TokenTask',
+    hcaptcha: 'HCaptchaTaskProxyLess',
+  },
+};
+
 function buildTask(type, websiteURL, websiteKey, subdomain) {
+  const provider = (typeof CAPTCHA_PROVIDER !== 'undefined' && CAPTCHA_PROVIDER) || 'capsolver';
+  const map = TASK_TYPES[provider] || TASK_TYPES.capsolver;
   switch (type) {
     case 'funcaptcha':
       return {
-        type: 'FunCaptchaTaskProxyLess',
+        type: map.funcaptcha,
         websiteURL,
         websitePublicKey: websiteKey,
         funcaptchaApiJSSubdomain: subdomain || '',
       };
     case 'recaptchav2':
-      return {
-        type: 'ReCaptchaV2TaskProxyLess',
-        websiteURL,
-        websiteKey,
-      };
+      return { type: map.recaptchav2, websiteURL, websiteKey };
     case 'recaptchav3':
-      return {
-        type: 'ReCaptchaV3TaskProxyLess',
-        websiteURL,
-        websiteKey,
-        pageAction: 'verify',
-      };
+      return { type: map.recaptchav3, websiteURL, websiteKey, pageAction: 'verify' };
     case 'hcaptcha':
-      return {
-        type: 'HCaptchaTaskProxyLess',
-        websiteURL,
-        websiteKey,
-      };
+      return { type: map.hcaptcha, websiteURL, websiteKey };
     default:
-      return {
-        type: 'FunCaptchaTaskProxyLess',
-        websiteURL,
-        websitePublicKey: websiteKey,
-      };
+      return { type: map.funcaptcha, websiteURL, websitePublicKey: websiteKey };
   }
 }

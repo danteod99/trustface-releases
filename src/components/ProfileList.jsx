@@ -31,6 +31,7 @@ export default function ProfileList({ tier, onUpgrade }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingNote, setEditingNote] = useState(null); // profile id being edited
   const [noteText, setNoteText] = useState('');
+  const [cftProgress, setCftProgress] = useState(null); // % descarga Chrome for Testing
 
   const loadProfiles = async () => {
     const data = await window.api.listProfiles();
@@ -55,6 +56,11 @@ export default function ProfileList({ tier, onUpgrade }) {
     // Refresh when login succeeds
     window.api.onLoginSuccess?.((profileId) => {
       loadProfiles();
+    });
+
+    // Progreso de descarga de Chrome for Testing (motor de captcha, primera vez)
+    window.api.onCftProgress?.((data) => {
+      setCftProgress(data.pct >= 100 ? null : data.pct);
     });
 
     return () => clearInterval(interval);
@@ -275,6 +281,18 @@ export default function ProfileList({ tier, onUpgrade }) {
 
   return (
     <div onContextMenu={handleContextMenu} onClick={closeContextMenu}>
+      {/* Descarga de Chrome for Testing (motor de captcha, solo la primera vez) */}
+      {cftProgress !== null && (
+        <div className="fixed top-4 right-4 z-50 bg-white border border-trust-border rounded-xl shadow-2xl px-4 py-3 w-72">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-sm font-medium text-trust-dark">Preparando motor de captcha…</span>
+          </div>
+          <div className="h-2 bg-trust-surface rounded-full overflow-hidden">
+            <div className="h-full bg-blue-600 rounded-full transition-all" style={{ width: `${cftProgress}%` }} />
+          </div>
+          <div className="text-xs text-trust-muted mt-1 text-right">{cftProgress}% · descarga única (~150 MB)</div>
+        </div>
+      )}
       {/* Context Menu */}
       {contextMenu && (
         <div

@@ -842,45 +842,46 @@ async function marketplaceCreateListing(page, rawListing) {
       }).catch(() => []);
       console.log(`[MP Create] All buttons: ${JSON.stringify(allBtns)}`);
 
-      // Detect what buttons are available and click the right one
-      const result = await page.evaluate(() => {
+      // Detectar qué botón hay (Publicar preferido sobre Siguiente). NO hacemos
+      // click dentro de evaluate: el .click() del DOM NO dispara el handler de
+      // React de Facebook, así que el botón "se hace click" pero no publica.
+      // El click real lo hace Playwright abajo (evento de confianza que React sí ve).
+      const detected = await page.evaluate(() => {
         const publishWords = ['publish', 'publicar', 'publier', 'veröffentlichen', 'опубликовать', 'نشر', '发布', '게시'];
         const nextWords = ['next', 'siguiente', 'suivant', 'weiter', 'próximo', 'далее', 'التالي', '下一步', '다음'];
         const skipWords = ['previous', 'anterior', 'back', 'atrás', 'précédent', 'zurück', 'السابق', '上一步', 'save draft', 'guardar borrador', 'learn more', 'try it', 'boost'];
-
         const btns = document.querySelectorAll('button, div[role="button"]');
-        let publishBtn = null;
-        let nextBtn = null;
-
+        let publish = null, next = null;
         for (const btn of btns) {
           const text = (btn.innerText || '').trim();
           const textLower = text.toLowerCase();
           if (text.length < 2 || text.length > 40) continue;
           if (skipWords.some(k => textLower.includes(k))) continue;
-
           const rect = btn.getBoundingClientRect();
           if (rect.width < 50) continue;
+          if (publishWords.some(k => textLower.includes(k))) publish = text;
+          else if (nextWords.some(k => textLower.includes(k))) next = text;
+        }
+        return { publish, next };
+      }).catch(() => ({}));
 
-          if (publishWords.some(k => textLower.includes(k))) {
-            publishBtn = { el: btn, text };
-          } else if (nextWords.some(k => textLower.includes(k))) {
-            nextBtn = { el: btn, text };
-          }
-        }
+      // Click REAL con Playwright (dispara los eventos que React de Facebook escucha)
+      const clickRealButton = async (label) => {
+        const loc = page.locator('div[role="button"], button')
+          .filter({ hasText: label }).last();
+        await loc.scrollIntoViewIfNeeded().catch(() => {});
+        await page.waitForTimeout(400);
+        await loc.click({ timeout: 6000 });
+      };
 
-        // ALWAYS prefer Publish if available
-        if (publishBtn) {
-          publishBtn.el.scrollIntoView({ behavior: 'instant', block: 'center' });
-          publishBtn.el.click();
-          return { action: 'publish', text: publishBtn.text };
-        }
-        if (nextBtn) {
-          nextBtn.el.scrollIntoView({ behavior: 'instant', block: 'center' });
-          nextBtn.el.click();
-          return { action: 'next', text: nextBtn.text };
-        }
-        return null;
-      }).catch(() => null);
+      let result = null;
+      if (detected.publish) {
+        try { await clickRealButton(detected.publish); result = { action: 'publish', text: detected.publish }; }
+        catch (e) { console.log(`[MP Create] Click en "${detected.publish}" falló: ${e.message}`); }
+      } else if (detected.next) {
+        try { await clickRealButton(detected.next); result = { action: 'next', text: detected.next }; }
+        catch (e) { console.log(`[MP Create] Click en "${detected.next}" falló: ${e.message}`); }
+      }
 
       if (!result) {
         console.log(`[MP Create] No Next/Publish button found — stopping`);
@@ -1015,7 +1016,7 @@ async function marketplaceCreateListing(page, rawListing) {
 // ── Marketplace: Repost Listing (delete + recreate) ──
 async function marketplaceRepost(page, listingUrl, listingData) {
   // Go to listing and delete
-  await page.goto(listingUrl, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(listingUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   // Check if session expired — not logged in
@@ -1043,7 +1044,7 @@ async function marketplaceRepost(page, listingUrl, listingData) {
 
 // ── Messenger: Send DM ──
 async function sendMessage(page, recipient, message, options = {}) {
-  await page.goto(FB_URLS.messenger, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(FB_URLS.messenger, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   // New message
@@ -1107,7 +1108,7 @@ async function sendMassDM(page, recipients, message, options = {}) {
 // ── Post to Profile/Page ──
 async function createPost(page, content, options = {}) {
   const url = options.pageUrl || FB_URLS.home;
-  await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(url, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   // Click "What's on your mind?"
@@ -1150,7 +1151,7 @@ async function createPost(page, content, options = {}) {
 
 // ── Post to Group ──
 async function postToGroup(page, groupUrl, content) {
-  await page.goto(groupUrl, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(groupUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   const writeBox = await page.$('[aria-label*="Escribe algo"], [aria-label*="Write something"]');
@@ -1183,11 +1184,29 @@ async function postToGroup(page, groupUrl, content) {
 }
 
 // ── Engagement: Like Posts ──
+// Detecta si la URL es un POST específico (permalink) y no un perfil/página.
+function isSpecificPost(url) {
+  return /\/posts\/|\/permalink\/|story_fbid=|[?&]fbid=|\/photo(s)?\/|\/videos?\/|\/watch\/?\?v=|\/reel\/|\/groups\/[^/]+\/posts\//i.test(url || '');
+}
+
 async function likePosts(page, targetUrl, maxLikes = 10) {
-  await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 30000 });
-  await page.waitForTimeout(2000);
+  await page.goto(targetUrl, { waitUntil: 'load', timeout: 30000 });
+  await page.waitForTimeout(2500);
 
   let liked = 0;
+
+  // POST ESPECÍFICO: dar UN like a ese post (cada cuenta que corre lo likea una vez).
+  if (isSpecificPost(targetUrl)) {
+    const likeBtn = await page.$('[aria-label*="Me gusta"]:not([aria-pressed="true"]), [aria-label="Like"]:not([aria-pressed="true"])');
+    if (likeBtn) {
+      await likeBtn.click();
+      liked = 1;
+      await page.waitForTimeout(randomBetween(1500, 3000));
+    }
+    return { liked, target: 'post' };
+  }
+
+  // PERFIL/PÁGINA: recorrer varios posts del feed dando likes.
   for (let i = 0; i < maxLikes; i++) {
     const likeBtn = await page.$('[aria-label*="Me gusta"]:not([aria-pressed="true"]), [aria-label*="Like"]:not([aria-pressed="true"])');
     if (likeBtn) {
@@ -1203,37 +1222,81 @@ async function likePosts(page, targetUrl, maxLikes = 10) {
   return { liked };
 }
 
-// ── Engagement: Comment on Posts ──
-async function commentOnPosts(page, targetUrl, comments, maxComments = 5) {
-  await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 30000 });
-  await page.waitForTimeout(2000);
+// ── Engagement: Like a un COMENTARIO específico ──
+// Cada cuenta le da 1 like al comentario que coincide con `commentMatch`
+// (texto del comentario o nombre de quien comentó) en el post `postUrl`.
+async function likeComment(page, postUrl, commentMatch) {
+  await page.goto(postUrl, { waitUntil: 'load', timeout: 30000 });
+  await page.waitForTimeout(4000);
 
-  let commented = 0;
-  for (let i = 0; i < maxComments; i++) {
-    const commentBtn = await page.$('[aria-label*="Comentar"], [aria-label*="Comment"]');
-    if (commentBtn) {
-      await commentBtn.click();
-      await page.waitForTimeout(1000);
+  // Cargar comentarios: abrir "Ver más comentarios" y hacer scroll
+  const moreBtn = await page.$('div[role="button"]:has-text("Ver más comentarios"), div[role="button"]:has-text("View more comments")');
+  if (moreBtn) { await moreBtn.click().catch(() => {}); await page.waitForTimeout(2500); }
+  for (let i = 0; i < 5; i++) { await page.mouse.wheel(0, 800); await page.waitForTimeout(1200); }
 
-      const commentBox = await page.$('[aria-label*="Escribe un comentario"], [aria-label*="Write a comment"], [contenteditable="true"]');
-      if (commentBox) {
-        const comment = comments[i % comments.length];
-        await commentBox.type(comment, { delay: humanDelay(30, 70) });
-        await page.keyboard.press('Enter');
-        commented++;
-        await page.waitForTimeout(randomBetween(5000, 15000));
+  const match = String(commentMatch || '').trim();
+  if (!match) return { liked: 0, error: 'sin texto de comentario' };
+
+  // Encontrar el ÍNDICE del botón "Me gusta" del comentario que coincide.
+  // (los comentarios tienen "Responder"/"Reply" en su bloque; así los distinguimos del like del post)
+  const idx = await page.evaluate((m) => {
+    const target = m.toLowerCase();
+    const btns = [...document.querySelectorAll('[aria-label="Me gusta"], [aria-label="Like"]')];
+    for (let i = 0; i < btns.length; i++) {
+      let node = btns[i];
+      for (let up = 0; up < 10; up++) {
+        node = node.parentElement; if (!node) break;
+        const t = (node.innerText || '').toLowerCase();
+        if ((t.includes('responder') || t.includes('reply')) && t.includes(target) && t.length < 500) {
+          return i;
+        }
       }
     }
-    await page.evaluate(() => window.scrollBy(0, 600));
-    await page.waitForTimeout(1500);
-  }
+    return -1;
+  }, match);
 
-  return { commented };
+  if (idx < 0) return { liked: 0, error: 'comentario no encontrado' };
+
+  // Click REAL con Playwright (dispara el evento que React de Facebook escucha)
+  const likeBtn = page.locator('[aria-label="Me gusta"], [aria-label="Like"]').nth(idx);
+  await likeBtn.scrollIntoViewIfNeeded().catch(() => {});
+  await page.waitForTimeout(500);
+  await likeBtn.click({ timeout: 6000 });
+  await page.waitForTimeout(randomBetween(2000, 4000));
+
+  return { liked: 1 };
+}
+
+// ── Engagement: Comment on Posts ──
+async function commentOnPosts(page, targetUrl, comments) {
+  await page.goto(targetUrl, { waitUntil: 'load', timeout: 30000 });
+  await page.waitForTimeout(2500);
+
+  const list = (comments || []).filter((c) => c && c.trim());
+  if (!list.length) return { commented: 0 };
+
+  // Cada perfil deja UN SOLO comentario (elegido al azar de la lista) en el post.
+  const text = list[Math.floor(Math.random() * list.length)];
+
+  // Abrir la caja de comentario del post principal
+  const commentBtn = await page.$('[aria-label*="Comentar"], [aria-label*="Comment"]');
+  if (commentBtn) { await commentBtn.click(); await page.waitForTimeout(1200); }
+
+  const commentBox = await page.$('[aria-label*="Escribe un comentario"], [aria-label*="Write a comment"], [contenteditable="true"]');
+  if (!commentBox) return { commented: 0 };
+
+  await commentBox.click();
+  await commentBox.type(text, { delay: humanDelay(30, 70) });
+  await page.waitForTimeout(500);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(randomBetween(3000, 6000));
+
+  return { commented: 1, target: isSpecificPost(targetUrl) ? 'post' : 'profile' };
 }
 
 // ── Share Post ──
 async function sharePost(page, postUrl, shareType = 'feed') {
-  await page.goto(postUrl, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(postUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   const shareBtn = await page.$('[aria-label*="Compartir"], [aria-label*="Share"]');
@@ -1253,7 +1316,7 @@ async function sharePost(page, postUrl, shareType = 'feed') {
 
 // ── Join Group ──
 async function joinGroup(page, groupUrl) {
-  await page.goto(groupUrl, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(groupUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   const joinBtn = await page.$('button:has-text("Unirse"), button:has-text("Join")');
@@ -1270,7 +1333,7 @@ async function addFriends(page, profileUrls, maxRequests = 20) {
   let sent = 0;
   for (const url of profileUrls.slice(0, maxRequests)) {
     try {
-      await page.goto(url, { waitUntil: 'networkidle', timeout: 20000 });
+      await page.goto(url, { waitUntil: 'load', timeout: 20000 });
       await page.waitForTimeout(1500);
       const addBtn = await page.$('button:has-text("Agregar"), button:has-text("Add Friend")');
       if (addBtn) {
@@ -1285,7 +1348,7 @@ async function addFriends(page, profileUrls, maxRequests = 20) {
 
 // ── Scrape Group Members ──
 async function scrapeGroupMembers(page, groupUrl, maxMembers = 100) {
-  await page.goto(groupUrl + '/members', { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(groupUrl + '/members', { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   const members = [];
@@ -2255,7 +2318,7 @@ async function warmupAccount(page, options = {}) {
   const actions = [];
 
   // Scroll feed
-  await page.goto(FB_URLS.home, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(FB_URLS.home, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   for (let i = 0; i < (options.scrolls || 5); i++) {
@@ -2287,6 +2350,101 @@ async function warmupAccount(page, options = {}) {
   return { actions };
 }
 
+// ── Editar Perfil (foto + bio) ──
+// Elige una imagen al azar de una carpeta (foto distinta por cuenta).
+function pickRandomImage(folder) {
+  try {
+    if (!folder || !fs.existsSync(folder)) return null;
+    const files = fs.readdirSync(folder).filter((f) => /\.(jpe?g|png|webp)$/i.test(f));
+    if (!files.length) return null;
+    return path.join(folder, files[Math.floor(Math.random() * files.length)]);
+  } catch { return null; }
+}
+
+async function editProfileFull(page, options = {}) {
+  const pickLine = (txt) => {
+    const a = String(txt || '').split('\n').map((s) => s.trim()).filter(Boolean);
+    return a.length ? a[Math.floor(Math.random() * a.length)] : '';
+  };
+  const result = { photo: false, bio: false };
+
+  // ── Foto de perfil ──
+  // Flujo real de Facebook (selectores verificados 2026-08-09):
+  //  1) botón [aria-label="Acciones de foto del perfil"]
+  //  2) opción "Elegir foto del perfil"
+  //  3) "Subir foto" (dispara file chooser) o input[type=file] de imagen
+  //  4) "Guardar" en el diálogo de recorte
+  const img = pickRandomImage(options.photoFolder);
+  if (img) {
+    try {
+      await page.goto(FB_URLS.profile, { waitUntil: 'load', timeout: 30000 });
+      await page.waitForTimeout(3500);
+
+      // 1) Abrir el menú de la foto de perfil
+      await page.locator('[aria-label="Acciones de foto del perfil"], [aria-label*="foto del perfil" i]')
+        .first().click({ timeout: 8000 });
+      await page.waitForTimeout(1800);
+
+      // 2) "Elegir foto del perfil"
+      await page.locator('div[role="button"]:has-text("Elegir foto del perfil"), span:has-text("Elegir foto del perfil")')
+        .first().click({ timeout: 8000 });
+      await page.waitForTimeout(2500);
+
+      // 3) Subir el archivo: preferir "Subir foto" (file chooser); fallback al input de imagen
+      const [chooser] = await Promise.all([
+        page.waitForEvent('filechooser', { timeout: 6000 }).catch(() => null),
+        page.locator('div[role="button"]:has-text("Subir foto"), span:has-text("Subir foto"), div[role="button"]:has-text("Cargar"), span:has-text("Upload")')
+          .first().click({ timeout: 5000 }).catch(() => {}),
+      ]);
+      if (chooser) {
+        await chooser.setFiles(img);
+      } else {
+        // input file de SOLO imagen (accept empieza con image, no video)
+        await page.locator('input[type="file"][accept^="image"]').first().setInputFiles(img, { timeout: 8000 });
+      }
+      await page.waitForTimeout(4000);
+
+      // 4) Guardar (diálogo de recorte/preview)
+      await page.locator('div[aria-label="Guardar"], div[aria-label="Save"], div[role="button"]:has-text("Guardar"), div[role="button"]:has-text("Save")')
+        .first().click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(3500);
+
+      result.photo = true;
+      console.log(`[EditProfile] Foto de perfil actualizada: ${path.basename(img)}`);
+    } catch (e) {
+      console.log(`[EditProfile] No se pudo cambiar la foto: ${e.message}`);
+    }
+  }
+
+  // ── Bio / Detalles ── (best-effort)
+  const bio = pickLine(options.bios);
+  if (bio) {
+    try {
+      await page.goto(FB_URLS.profile, { waitUntil: 'load', timeout: 30000 });
+      await page.waitForTimeout(2500);
+      const editBio = await page.$('div[role="button"]:has-text("Editar biografía"), div[role="button"]:has-text("Edit bio"), div[role="button"]:has-text("Añadir biografía"), div[role="button"]:has-text("Add bio")');
+      if (editBio) {
+        await editBio.click().catch(() => {});
+        await page.waitForTimeout(1500);
+        const ta = await page.$('textarea');
+        if (ta) {
+          await ta.click();
+          await ta.fill(bio);
+          await page.waitForTimeout(800);
+          const save = await page.$('div[aria-label="Guardar"], div[aria-label="Save"], div[role="button"]:has-text("Guardar"), div[role="button"]:has-text("Save")');
+          if (save) { await save.click().catch(() => {}); await page.waitForTimeout(2000); }
+          result.bio = true;
+          console.log('[EditProfile] Bio actualizada');
+        }
+      }
+    } catch (e) {
+      console.log(`[EditProfile] No se pudo cambiar la bio: ${e.message}`);
+    }
+  }
+
+  return result;
+}
+
 // ── Helpers ──
 function humanDelay(min, max) {
   return Math.floor(Math.random() * (max - min) + min);
@@ -2305,6 +2463,7 @@ module.exports = {
   createPost,
   postToGroup,
   likePosts,
+  likeComment,
   commentOnPosts,
   sharePost,
   joinGroup,
@@ -2318,4 +2477,5 @@ module.exports = {
   warmupAccount,
   resetUsedImages,
   getImageStats,
+  editProfileFull,
 };

@@ -14,7 +14,7 @@ const FB_URLS = {
 
 // ── Marketplace: Create Listing ──
 async function marketplaceCreateListing(page, listing) {
-  await page.goto(FB_URLS.marketplaceCreate, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(FB_URLS.marketplaceCreate, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   // Upload photos
@@ -99,7 +99,7 @@ async function marketplaceCreateListing(page, listing) {
 // ── Marketplace: Repost Listing (delete + recreate) ──
 async function marketplaceRepost(page, listingUrl, listingData) {
   // Go to listing and delete
-  await page.goto(listingUrl, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(listingUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   const moreBtn = await page.$('[aria-label*="Mas"], [aria-label*="More"]');
@@ -122,7 +122,7 @@ async function marketplaceRepost(page, listingUrl, listingData) {
 
 // ── Messenger: Send DM ──
 async function sendMessage(page, recipient, message, options = {}) {
-  await page.goto(FB_URLS.messenger, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(FB_URLS.messenger, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   // New message
@@ -186,7 +186,7 @@ async function sendMassDM(page, recipients, message, options = {}) {
 // ── Post to Profile/Page ──
 async function createPost(page, content, options = {}) {
   const url = options.pageUrl || FB_URLS.home;
-  await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(url, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   // Click "What's on your mind?"
@@ -229,7 +229,7 @@ async function createPost(page, content, options = {}) {
 
 // ── Post to Group ──
 async function postToGroup(page, groupUrl, content) {
-  await page.goto(groupUrl, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(groupUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   const writeBox = await page.$('[aria-label*="Escribe algo"], [aria-label*="Write something"]');
@@ -263,7 +263,7 @@ async function postToGroup(page, groupUrl, content) {
 
 // ── Engagement: Like Posts ──
 async function likePosts(page, targetUrl, maxLikes = 10) {
-  await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(targetUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   let liked = 0;
@@ -284,7 +284,7 @@ async function likePosts(page, targetUrl, maxLikes = 10) {
 
 // ── Engagement: Comment on Posts ──
 async function commentOnPosts(page, targetUrl, comments, maxComments = 5) {
-  await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(targetUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   let commented = 0;
@@ -312,7 +312,7 @@ async function commentOnPosts(page, targetUrl, comments, maxComments = 5) {
 
 // ── Share Post ──
 async function sharePost(page, postUrl, shareType = 'feed') {
-  await page.goto(postUrl, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(postUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   const shareBtn = await page.$('[aria-label*="Compartir"], [aria-label*="Share"]');
@@ -332,7 +332,7 @@ async function sharePost(page, postUrl, shareType = 'feed') {
 
 // ── Join Group ──
 async function joinGroup(page, groupUrl) {
-  await page.goto(groupUrl, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(groupUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   const joinBtn = await page.$('button:has-text("Unirse"), button:has-text("Join")');
@@ -349,7 +349,7 @@ async function addFriends(page, profileUrls, maxRequests = 20) {
   let sent = 0;
   for (const url of profileUrls.slice(0, maxRequests)) {
     try {
-      await page.goto(url, { waitUntil: 'networkidle', timeout: 20000 });
+      await page.goto(url, { waitUntil: 'load', timeout: 20000 });
       await page.waitForTimeout(1500);
       const addBtn = await page.$('button:has-text("Agregar"), button:has-text("Add Friend")');
       if (addBtn) {
@@ -364,7 +364,7 @@ async function addFriends(page, profileUrls, maxRequests = 20) {
 
 // ── Scrape Group Members ──
 async function scrapeGroupMembers(page, groupUrl, maxMembers = 100) {
-  await page.goto(groupUrl + '/members', { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(groupUrl + '/members', { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   const members = [];
@@ -397,7 +397,7 @@ async function scrapeGroupMembers(page, groupUrl, maxMembers = 100) {
 // ── Scrape Marketplace Listings ──
 async function scrapeMarketplace(page, searchQuery, maxResults = 50) {
   const url = `https://www.facebook.com/marketplace/search/?query=${encodeURIComponent(searchQuery)}`;
-  await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(url, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   const listings = [];
@@ -432,7 +432,7 @@ async function scrapeMarketplace(page, searchQuery, maxResults = 50) {
 
 // ── Reply to Marketplace Messages ──
 async function autoReplyMarketplace(page, replyTemplate) {
-  await page.goto('https://www.facebook.com/marketplace/you/selling', { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto('https://www.facebook.com/marketplace/you/selling', { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   // Look for unread messages indicators
@@ -463,7 +463,7 @@ async function warmupAccount(page, options = {}) {
   const actions = [];
 
   // Scroll feed
-  await page.goto(FB_URLS.home, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(FB_URLS.home, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   for (let i = 0; i < (options.scrolls || 5); i++) {
@@ -532,7 +532,7 @@ module.exports = {
 
 // ── Pages: Scrape Page Info (email, phone, address, website, category) ──
 async function scrapePageInfo(page, pageUrl) {
-  await page.goto(pageUrl, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(pageUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(3000);
 
   const data = await page.evaluate(() => {
@@ -633,7 +633,7 @@ async function scrapePageInfo(page, pageUrl) {
 async function scrapePageFollowers(page, pageUrl, maxFollowers = 100) {
   // Go to the page's community/followers section
   const communityUrl = pageUrl.replace(/\/$/, '') + '/community/';
-  await page.goto(communityUrl, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(communityUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(3000);
 
   const followers = [];
@@ -678,7 +678,7 @@ async function scrapePageFollowers(page, pageUrl, maxFollowers = 100) {
 
 // ── Pages: Post to a Page ──
 async function postToPage(page, pageUrl, content) {
-  await page.goto(pageUrl, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(pageUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   // Click "Create post" / "Crear publicación"
@@ -721,7 +721,7 @@ async function postToPage(page, pageUrl, content) {
 
 // ── Pages: Invite Friends to Like a Page ──
 async function inviteToPage(page, pageUrl, maxInvites = 50) {
-  await page.goto(pageUrl, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(pageUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 
   // Click "Invite friends" / "Invitar amigos"
@@ -760,7 +760,7 @@ async function inviteToPage(page, pageUrl, maxInvites = 50) {
 // ── Pages: Scrape Reviews from a Page ──
 async function scrapePageReviews(page, pageUrl, maxReviews = 50) {
   const reviewsUrl = pageUrl.replace(/\/$/, '') + '/reviews/';
-  await page.goto(reviewsUrl, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(reviewsUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(3000);
 
   const reviews = [];
@@ -812,7 +812,7 @@ async function scrapePageReviews(page, pageUrl, maxReviews = 50) {
 // ── Pages: Search Pages by keyword ──
 async function searchPages(page, keyword, maxResults = 20) {
   const searchUrl = `https://www.facebook.com/search/pages/?q=${encodeURIComponent(keyword)}`;
-  await page.goto(searchUrl, { waitUntil: 'networkidle', timeout: 30000 });
+  await page.goto(searchUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(3000);
 
   const pages = [];

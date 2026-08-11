@@ -1,7 +1,7 @@
 {
   "name": "trustface-desktop",
-  "version": "1.6.6",
-  "description": "TrustFace Desktop \u2014 Facebook Multi-Account Manager with Marketplace Automation",
+  "version": "1.6.7",
+  "description": "TrustFace Desktop — Facebook Multi-Account Manager with Marketplace Automation",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -29,6 +29,7 @@
     "wait-on": "^8.0.3"
   },
   "dependencies": {
+    "@puppeteer/browsers": "^3.0.6",
     "@supabase/supabase-js": "^2.100.1",
     "better-sqlite3": "^11.9.1",
     "electron-updater": "^6.8.3",

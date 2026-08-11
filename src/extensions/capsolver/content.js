@@ -84,65 +84,69 @@
       if (response && response.success && response.result) {
         console.log(`[CapSolver] Got solution, injecting...`);
         injectSolution(type, response.result);
-      } else {
-        console.log(`[CapSolver] Failed: ${response?.error || 'Unknown error'}`);
+        // Éxito: cooldown largo. Si la página no avanzó, re-resolver enseguida solo
+        // gasta créditos (cada solve cuesta dinero). Damos tiempo a que procese.
+        setTimeout(() => { solving = false; }, 90000);
+        return;
       }
+      console.log(`[CapSolver] Failed: ${response?.error || 'Unknown error'}`);
+      // Falla: reintentar más pronto
+      setTimeout(() => { solving = false; }, 10000);
     } catch (err) {
       console.log(`[CapSolver] Error: ${err.message}`);
-    } finally {
-      // Allow retrying after a delay
       setTimeout(() => { solving = false; }, 10000);
     }
+  }
+
+  // Inyecta el token de reCAPTCHA en la textarea (esto SÍ se puede desde el mundo
+  // aislado: es escritura al DOM compartido, sin CSP) y luego avisa al script del
+  // MUNDO PRINCIPAL (main-world.js) para que dispare el callback real de reCAPTCHA.
+  function injectRecaptchaInPage(token) {
+    document.querySelectorAll('#g-recaptcha-response, textarea[name="g-recaptcha-response"]').forEach(function (t) {
+      t.value = token;
+      t.dispatchEvent(new Event('input', { bubbles: true }));
+      t.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    // El main-world lee el token de la textarea y dispara el callback en el
+    // contexto de la página (donde vive window.___grecaptcha_cfg).
+    window.dispatchEvent(new CustomEvent('__capsolver_recaptcha_solved'));
   }
 
   function injectSolution(type, solution) {
     try {
       if (type === 'funcaptcha' && solution.token) {
-        // Inject FunCaptcha token
-        const callback = window.ArkoseEnforcement?.setup?.onCompleted
-          || window.fc?.callback
-          || null;
-
-        if (callback) {
-          callback({ token: solution.token });
-          console.log('[CapSolver] FunCaptcha token injected via callback');
-        } else {
-          // Try to set the hidden input
-          const hiddenInput = document.querySelector('input[name="fc-token"], input[name="verification_code"]');
-          if (hiddenInput) {
-            hiddenInput.value = solution.token;
-            hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
-            console.log('[CapSolver] FunCaptcha token set in hidden input');
-          }
-
-          // Also try posting message to iframe
-          const iframe = document.querySelector('iframe[src*="arkoselabs"], iframe[src*="funcaptcha"]');
-          if (iframe) {
-            iframe.contentWindow.postMessage(
-              JSON.stringify({ eventId: 'challenge-complete', payload: { sessionToken: solution.token } }),
-              '*'
-            );
-            console.log('[CapSolver] FunCaptcha token posted to iframe');
-          }
+        const token = solution.token;
+        // Operaciones de DOM (funcionan desde el mundo aislado):
+        // input oculto + postMessage al iframe de Arkose.
+        const hiddenInput = document.querySelector('input[name="fc-token"], input[name="verification_code"]');
+        if (hiddenInput) {
+          hiddenInput.value = token;
+          hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
         }
-      } else if (type === 'recaptchav2' && solution.gRecaptchaResponse) {
-        // Inject reCAPTCHA response
-        const textarea = document.querySelector('#g-recaptcha-response, textarea[name="g-recaptcha-response"]');
-        if (textarea) {
-          textarea.value = solution.gRecaptchaResponse;
-          textarea.style.display = 'block';
+        const iframe = document.querySelector('iframe[src*="arkoselabs"], iframe[src*="funcaptcha"]');
+        if (iframe && iframe.contentWindow) {
+          iframe.contentWindow.postMessage(
+            JSON.stringify({ eventId: 'challenge-complete', payload: { sessionToken: token } }),
+            '*'
+          );
         }
-        // Call the callback
-        if (window.___grecaptcha_cfg?.clients) {
-          Object.values(window.___grecaptcha_cfg.clients).forEach((client) => {
-            const cb = Object.values(client).find((v) => v?.callback)?.callback;
-            if (cb) cb(solution.gRecaptchaResponse);
-          });
-        }
-        console.log('[CapSolver] reCAPTCHA solution injected');
-      } else if (type === 'hcaptcha' && solution.gRecaptchaResponse) {
+        // El callback de Arkose (window.ArkoseEnforcement / window.fc) vive en el
+        // contexto de la PÁGINA, no en el mundo aislado. Guardamos el token en el
+        // DOM y avisamos al main-world para que lo dispare allí.
+        document.documentElement.dataset.capsolverFcToken = token;
+        window.dispatchEvent(new CustomEvent('__capsolver_funcaptcha_solved'));
+        console.log('[CapSolver] FunCaptcha token inyectado + callback disparado');
+      } else if (type === 'recaptchav2' && (solution.gRecaptchaResponse || solution.token)) {
+        // El token puede venir como gRecaptchaResponse (CapSolver) o token (OmoCaptcha)
+        const responseToken = solution.gRecaptchaResponse || solution.token;
+        // Inyecta el token Y dispara el callback en el contexto de la página
+        // (antes solo llenaba la textarea desde el mundo aislado → no avanzaba).
+        injectRecaptchaInPage(responseToken);
+        console.log('[CapSolver] reCAPTCHA solution injected + callback disparado');
+      } else if (type === 'hcaptcha' && (solution.gRecaptchaResponse || solution.token)) {
+        const responseToken = solution.gRecaptchaResponse || solution.token;
         const textarea = document.querySelector('[name="h-captcha-response"], textarea[name="g-recaptcha-response"]');
-        if (textarea) textarea.value = solution.gRecaptchaResponse;
+        if (textarea) textarea.value = responseToken;
         console.log('[CapSolver] hCaptcha solution injected');
       }
     } catch (err) {
