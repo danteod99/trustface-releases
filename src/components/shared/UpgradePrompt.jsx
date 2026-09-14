@@ -12,7 +12,7 @@ const featureDescriptions = {
   default: 'Esta funcionalidad avanzada esta disponible exclusivamente para usuarios Pro.',
 };
 
-const WHATSAPP_PRO_URL = 'https://wa.me/51931119176?text=' + encodeURIComponent('Hola, quiero activar el plan Pro para usar todas las funciones.');
+const WHATSAPP_PRO_URL = 'https://wa.me/51927560268?text=' + encodeURIComponent('Hola, quiero activar el plan Pro para usar todas las funciones.');
 
 export default function UpgradePrompt({ feature, onUpgrade, onClose }) {
   const [dismissed, setDismissed] = useState(false);

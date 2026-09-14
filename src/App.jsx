@@ -50,7 +50,7 @@ export default function App() {
   const [insufficientModal, setInsufficientModal] = useState(null);
 
   // Contacto por WhatsApp para activar el plan Pro (reemplaza el pago por creditos)
-  const openProWhatsApp = () => window.api.openExternal?.('https://wa.me/51931119176?text=' + encodeURIComponent('Hola, quiero activar el plan Pro para usar todas las funciones.'));
+  const openProWhatsApp = () => window.api.openExternal?.('https://wa.me/51927560268?text=' + encodeURIComponent('Hola, quiero activar el plan Pro para usar todas las funciones.'));
 
   // Refrescar saldo del user logueado
   useEffect(() => {
