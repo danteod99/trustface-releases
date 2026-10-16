@@ -6,7 +6,10 @@
 
 const crypto = require('crypto');
 
-const API_KEY = process.env.NOWPAYMENTS_API_KEY || '0MA103D-8NF4VGJ-M2NE2FC-ZCF7E4X';
+// La clave NUNCA va en el código ni dentro del instalador (estuvo expuesta en el repo público hasta 2026-10-16: rotarla en NOWPayments).
+// Los pagos en la app están desactivados: el plan Pro se activa por WhatsApp.
+const API_KEY = process.env.NOWPAYMENTS_API_KEY || '';
+const SIN_PAGOS = { success: false, error: 'Los pagos en la app están desactivados. Activa Pro por WhatsApp: +51 927 560 268' };
 const BASE_URL = 'https://api.nowpayments.io/v1';
 
 // Webhook IPN URL from environment
@@ -51,6 +54,7 @@ const DURATION_LABELS = {
  * @returns {Promise<Object>} Datos del pago o error
  */
 async function createPaymentOrder(userId, plan) {
+  if (!API_KEY) return SIN_PAGOS;
   const { duration, network } = plan;
 
   const priceAmount = PRICE_MAP[duration];
@@ -115,6 +119,7 @@ async function createPaymentOrder(userId, plan) {
  * @returns {Promise<Object>} Estado del pago o error
  */
 async function checkPaymentStatus(paymentId) {
+  if (!API_KEY) return SIN_PAGOS;
   try {
     console.log(`[NOWPayments] Consultando estado del pago: ${paymentId}`);
 
