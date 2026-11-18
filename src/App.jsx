@@ -8,6 +8,7 @@ import Marketplace from './components/Marketplace';
 import Messenger from './components/Messenger';
 import GroupManager from './components/GroupManager';
 import PageManager from './components/PageManager';
+import AdsManager from './components/AdsManager';
 import Scheduler from './components/Scheduler';
 import Warmup from './components/Warmup';
 import ShadowbanCheck from './components/ShadowbanCheck';
@@ -28,6 +29,7 @@ const TABS = {
   messenger: 'Messenger',
   groups: 'Grupos',
   pages: 'Paginas',
+  ads: 'Anuncios',
   warmup: 'Warm-up',
   shadowban: 'Restricciones',
   followers: 'Amigos',
@@ -37,7 +39,7 @@ const TABS = {
   settings: 'Configuracion',
 };
 
-const PRO_TABS = ['marketplace', 'scheduler', 'messenger', 'warmup', 'shadowban', 'scraper'];
+const PRO_TABS = ['marketplace', 'scheduler', 'messenger', 'warmup', 'shadowban', 'scraper', 'ads'];
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -158,6 +160,7 @@ export default function App() {
         {activeTab === 'messenger' && <Messenger tier={tier} onUpgrade={openProWhatsApp} />}
         {activeTab === 'groups' && <GroupManager tier={tier} />}
         {activeTab === 'pages' && <PageManager tier={tier} />}
+        {activeTab === 'ads' && <AdsManager tier={tier} onUpgrade={openProWhatsApp} />}
         {activeTab === 'warmup' && <Warmup tier={tier} onUpgrade={openProWhatsApp} />}
         {activeTab === 'shadowban' && <ShadowbanCheck tier={tier} onUpgrade={openProWhatsApp} />}
         {activeTab === 'followers' && <Followers />}
