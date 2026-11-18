@@ -240,6 +240,10 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // En desarrollo (sin empaquetar) macOS muestra el icono de Electron; usar el de TrustFace
+  if (process.platform === 'darwin' && app.dock && !app.isPackaged) {
+    try { app.dock.setIcon(path.join(__dirname, 'assets', 'icon.icns')); } catch {}
+  }
   initDatabase();
 
   // Load CapSolver API key from DB
