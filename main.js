@@ -1673,6 +1673,85 @@ ipcMain.handle('scrape:delete', (_, dataType) => {
   return { success: true };
 });
 
+// ─── IPC: Anuncios (Ads Manager / Business Manager por navegador) ─────
+// Solo lee y administra accesos con confirmacion explicita. Nunca crea ni activa anuncios.
+const { createAdsService } = require('./src/browser/ads-service');
+const adsCsv = require('./src/browser/ads-csv');
+const adsParsers = require('./src/browser/ads-parsers');
+let adsService = null;
+function getAds() {
+  if (!adsService) {
+    adsService = createAdsService({
+      getDb,
+      getActiveBrowsers,
+      launchBrowser: async (profile) => {
+        const ctx = await launchBrowser(profile);
+        try { getDb().prepare("UPDATE profiles SET status = 'running' WHERE id = ?").run(profile.id); } catch {}
+        return ctx;
+      },
+      closeBrowser: async (id) => {
+        await closeBrowser(id);
+        try { getDb().prepare("UPDATE profiles SET status = 'stopped' WHERE id = ?").run(id); } catch {}
+      },
+      loadProfile: (id) => decryptProfile(getDb().prepare('SELECT * FROM profiles WHERE id = ?').get(id)),
+      notify: (ev) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('ads:event', ev); },
+    });
+  }
+  return adsService;
+}
+// Envoltorio: exige plan Pro y convierte excepciones en { error } sin filtrar datos sensibles
+function adsHandler(feature, fn) {
+  return async (_, ...args) => {
+    try {
+      requirePro(cachedTier, feature);
+      return await fn(...args);
+    } catch (err) {
+      if (err && err.code === 'PRO_REQUIRED') return { error: 'PRO_REQUIRED', feature };
+      return { error: err && err.message ? err.message : 'Error desconocido' };
+    }
+  };
+}
+function adsProfileIds(ids) {
+  const db = getDb();
+  if (Array.isArray(ids) && ids.length) return ids;
+  return db.prepare('SELECT id FROM profiles').all().map((r) => r.id);
+}
+
+ipcMain.handle('ads:list-accounts', adsHandler('ads:read', () => getAds().listAccounts()));
+ipcMain.handle('ads:refresh-accounts', adsHandler('ads:read', (profileIds) => getAds().refreshAccounts(adsProfileIds(profileIds))));
+ipcMain.handle('ads:list-metrics', adsHandler('ads:read', (rangeKey, level) => getAds().listMetrics(rangeKey, level)));
+ipcMain.handle('ads:refresh-metrics', adsHandler('ads:read', (profileIds, rangeKeys, accountIds) => getAds().refreshMetrics(adsProfileIds(profileIds), rangeKeys, accountIds)));
+ipcMain.handle('ads:daily-summary', adsHandler('ads:read', (days) => getAds().dailySummary(days || 30)));
+ipcMain.handle('ads:list-businesses', adsHandler('ads:read', () => getAds().listBusinesses()));
+ipcMain.handle('ads:refresh-businesses', adsHandler('ads:read', (profileIds) => getAds().refreshBusinesses(adsProfileIds(profileIds))));
+ipcMain.handle('ads:cancel', () => { if (adsService) adsService.cancel(); return true; });
+ipcMain.handle('ads:is-running', () => (adsService ? adsService.isRunning() : false));
+ipcMain.handle('ads:get-settings', adsHandler('ads:read', () => getAds().getSettings()));
+ipcMain.handle('ads:set-settings', adsHandler('ads:read', (patch) => getAds().setSettings(patch)));
+ipcMain.handle('ads:log', adsHandler('ads:read', (limit) => getDb().prepare("SELECT a.*, p.name AS profile_name FROM action_log a LEFT JOIN profiles p ON p.id = a.profile_id WHERE a.action_type LIKE 'ads-%' ORDER BY a.created_at DESC, a.id DESC LIMIT ?").all(Math.min(Number(limit) || 50, 500))));
+
+// ESCRITURA en dos pasos: 1) prepare devuelve el resumen para que la UI pida confirmacion; 2) execute solo con el token.
+ipcMain.handle('ads:assign-prepare', adsHandler('ads:manage-access', (req) => getAds().prepareAssign(req || {})));
+ipcMain.handle('ads:assign-execute', adsHandler('ads:manage-access', (token) => getAds().executeAssign(token)));
+
+ipcMain.handle('ads:export-csv', adsHandler('ads:read', async (kind, opts = {}) => {
+  const ads = getAds();
+  let columns; let rows; let name;
+  if (kind === 'metrics') { columns = adsCsv.METRIC_COLUMNS; rows = ads.listMetrics(opts.rangeKey || 'today', opts.level || null); name = `anuncios-metricas-${opts.rangeKey || 'today'}`; }
+  else if (kind === 'daily') { columns = adsCsv.DAILY_COLUMNS; rows = ads.dailySummary(opts.days || 30); name = 'anuncios-resumen-diario'; }
+  else if (kind === 'accounts') { columns = adsCsv.ACCOUNT_COLUMNS; rows = ads.listAccounts(); name = 'anuncios-cuentas'; }
+  else return { error: 'Tipo de exportacion no valido' };
+  if (!rows.length) return { error: 'No hay datos para exportar. Actualiza primero.' };
+  const res = await dialog.showSaveDialog(mainWindow, {
+    title: 'Exportar CSV',
+    defaultPath: path.join(app.getPath('documents'), `${name}-${adsParsers.fmtDate(new Date())}.csv`),
+    filters: [{ name: 'CSV', extensions: ['csv'] }],
+  });
+  if (res.canceled || !res.filePath) return { canceled: true };
+  fs.writeFileSync(res.filePath, adsCsv.toCsv(columns, rows), 'utf8');
+  return { path: res.filePath, rows: rows.length };
+}));
+
 // ─── IPC: Facebook Automations ────────────────────────────────────────
 
 const fb = require('./src/browser/facebook-automations');

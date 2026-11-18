@@ -160,6 +160,28 @@ contextBridge.exposeInMainWorld('api', {
   fbScrapePageReviews: (profileId, pageUrl, max) => ipcRenderer.invoke('fb:scrape-page-reviews', profileId, pageUrl, max),
   fbSearchPages: (profileId, keyword, max) => ipcRenderer.invoke('fb:search-pages', profileId, keyword, max),
 
+  // Anuncios (Ads Manager / Business Manager)
+  adsListAccounts: () => ipcRenderer.invoke('ads:list-accounts'),
+  adsRefreshAccounts: (profileIds) => ipcRenderer.invoke('ads:refresh-accounts', profileIds),
+  adsListMetrics: (rangeKey, level) => ipcRenderer.invoke('ads:list-metrics', rangeKey, level),
+  adsRefreshMetrics: (profileIds, rangeKeys, accountIds) => ipcRenderer.invoke('ads:refresh-metrics', profileIds, rangeKeys, accountIds),
+  adsDailySummary: (days) => ipcRenderer.invoke('ads:daily-summary', days),
+  adsListBusinesses: () => ipcRenderer.invoke('ads:list-businesses'),
+  adsRefreshBusinesses: (profileIds) => ipcRenderer.invoke('ads:refresh-businesses', profileIds),
+  adsCancel: () => ipcRenderer.invoke('ads:cancel'),
+  adsIsRunning: () => ipcRenderer.invoke('ads:is-running'),
+  adsGetSettings: () => ipcRenderer.invoke('ads:get-settings'),
+  adsSetSettings: (patch) => ipcRenderer.invoke('ads:set-settings', patch),
+  adsLog: (limit) => ipcRenderer.invoke('ads:log', limit),
+  adsAssignPrepare: (req) => ipcRenderer.invoke('ads:assign-prepare', req),
+  adsAssignExecute: (token) => ipcRenderer.invoke('ads:assign-execute', token),
+  adsExportCsv: (kind, opts) => ipcRenderer.invoke('ads:export-csv', kind, opts),
+  onAdsEvent: (callback) => {
+    const h = (_, data) => callback(data);
+    ipcRenderer.on('ads:event', h);
+    return () => ipcRenderer.removeListener('ads:event', h);
+  },
+
   // AI Text Generation
   generateAIText: (provider, apiKey, prompt) => ipcRenderer.invoke('ai:generate-text', provider, apiKey, prompt),
 

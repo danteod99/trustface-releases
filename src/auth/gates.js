@@ -39,6 +39,10 @@ const FEATURE_TIERS = {
   // ─── Funciones PRO (herramientas) ───────────────────────────
   'warmup:start':             'pro',
   'shadowban:check':          'pro',
+
+  // ─── Anuncios (Ads Manager / Business Manager) ──────────────
+  'ads:read':                 'pro',
+  'ads:manage-access':        'pro',
 };
 
 /**
