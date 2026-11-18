@@ -1,6 +1,7 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const { app } = require('electron');
+const { migrateAdsSchema } = require('./ads-schema');
 
 let db = null;
 
@@ -73,6 +74,9 @@ function initDatabase() {
       UNIQUE(data_type, source, username)
     );
   `);
+
+  // Modulo Anuncios (tablas nuevas, migracion segura)
+  try { migrateAdsSchema(db); } catch (err) { console.error('[Ads] Error migrando esquema:', err.message); }
 
   // Action log
   db.exec(`
