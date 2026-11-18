@@ -1728,6 +1728,8 @@ ipcMain.handle('ads:refresh-metrics', adsHandler('ads:read', (profileIds, rangeK
 ipcMain.handle('ads:daily-summary', adsHandler('ads:read', (days) => getAds().dailySummary(days || 30)));
 ipcMain.handle('ads:list-businesses', adsHandler('ads:read', () => getAds().listBusinesses()));
 ipcMain.handle('ads:refresh-businesses', adsHandler('ads:read', (profileIds) => getAds().refreshBusinesses(adsProfileIds(profileIds))));
+ipcMain.handle('ads:open-sections', adsHandler('ads:read', () => Object.entries(require('./src/browser/ads-scraper').OPEN_SECTIONS).map(([key, v]) => ({ key, label: v.label }))));
+ipcMain.handle('ads:open-browser', adsHandler('ads:read', (profileIds, section) => getAds().openBrowsers(Array.isArray(profileIds) ? profileIds : [], section)));
 ipcMain.handle('ads:cancel', () => { if (adsService) adsService.cancel(); return true; });
 ipcMain.handle('ads:is-running', () => (adsService ? adsService.isRunning() : false));
 ipcMain.handle('ads:get-settings', adsHandler('ads:read', () => getAds().getSettings()));

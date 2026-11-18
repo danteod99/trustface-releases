@@ -168,6 +168,8 @@ contextBridge.exposeInMainWorld('api', {
   adsDailySummary: (days) => ipcRenderer.invoke('ads:daily-summary', days),
   adsListBusinesses: () => ipcRenderer.invoke('ads:list-businesses'),
   adsRefreshBusinesses: (profileIds) => ipcRenderer.invoke('ads:refresh-businesses', profileIds),
+  adsOpenSections: () => ipcRenderer.invoke('ads:open-sections'),
+  adsOpenBrowser: (profileIds, section) => ipcRenderer.invoke('ads:open-browser', profileIds, section),
   adsCancel: () => ipcRenderer.invoke('ads:cancel'),
   adsIsRunning: () => ipcRenderer.invoke('ads:is-running'),
   adsGetSettings: () => ipcRenderer.invoke('ads:get-settings'),

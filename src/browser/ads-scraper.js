@@ -17,6 +17,15 @@ const URLS = {
   bmAsset: (kind, assetId, bid) => `https://business.facebook.com/settings/${kind}/${assetId}?business_id=${bid}`,
 };
 
+// Secciones a las que se puede ABRIR el navegador de un perfil a mano (sin leer ni escribir nada)
+const OPEN_SECTIONS = {
+  adsmanager: { label: 'Ads Manager', url: URLS.accounts },
+  bm: { label: 'Business Manager', url: URLS.bmSelect },
+  bmsettings: { label: 'Configuración del Business Manager', url: 'https://business.facebook.com/settings/' },
+  billing: { label: 'Facturación y pagos', url: 'https://business.facebook.com/billing_hub/payment_settings' },
+  home: { label: 'Facebook (inicio)', url: 'https://www.facebook.com/' },
+};
+
 const BM_PATHS = { ad_account: 'ad-accounts', page: 'pages', person: 'people' };
 
 // Selectores alternativos por dato (el primero que funcione gana). Español e inglés.
@@ -294,7 +303,7 @@ async function assignAsset(page, { businessId, kind, assetId, personName, access
 }
 
 module.exports = {
-  URLS, SEL, AdsReadError, humanPause, sleep, rand,
+  URLS, OPEN_SECTIONS, SEL, AdsReadError, humanPause, sleep, rand,
   navigateCapture, checkBlocker,
   readAdAccounts, readAccountDetail, readPaymentMethod, readAccountMetrics,
   readBusinesses, readBusinessAssets, assignAsset,

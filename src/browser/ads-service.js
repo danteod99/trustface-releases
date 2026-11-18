@@ -320,7 +320,56 @@ function createAdsService(deps) {
     return bms.map((b) => ({ ...b, items: items.filter((i) => i.profile_id === b.profile_id && i.business_id === b.business_id).map((i) => ({ ...i, extra: safeJson(i.extra) })) }));
   }
 
+  // ── Abrir navegadores a mano (sin leer ni escribir nada en Facebook) ──
+  const OPEN_MAX = 10;
+
+  async function openOne(profileId, section) {
+    const ev = (status, extra = {}) => notify({ type: 'open-browser', profileId, status, section: section.label, ...extra });
+    try {
+      const profile = loadProfile(profileId);
+      if (!profile) return ev('error', { error: 'Perfil no encontrado.' });
+      let entry = getActiveBrowsers().get(profileId);
+      if (!entry) {
+        ev('launching');
+        await launchBrowser(profile);
+        entry = getActiveBrowsers().get(profileId);
+      }
+      if (!entry || !entry.context) return ev('error', { error: 'No se pudo abrir el navegador del perfil.' });
+      // Esperar el login automático (máx. ~120 s) sin bloquear a los demás perfiles
+      let logged = false;
+      for (let i = 0; i < 40; i++) {
+        if (!getActiveBrowsers().has(profileId)) return ev('closed');
+        const cookies = await entry.context.cookies('https://www.facebook.com').catch(() => []);
+        if (cookies.some((c) => c.name === 'c_user')) { logged = true; break; }
+        await sleep(3000);
+      }
+      if (!logged) return ev('no-session', { error: 'Sin sesión de Facebook: el navegador queda abierto para que inicies sesión a mano.' });
+      const page = await entry.context.newPage();
+      await page.goto(section.url, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+      await page.bringToFront().catch(() => {});
+      ev('opened');
+    } catch (err) {
+      ev('error', { error: err && err.message ? err.message : String(err) });
+    }
+  }
+
+  /** Abre uno o varios perfiles a la vez (escalonados) y la sección elegida en una pestaña nueva. Los navegadores quedan abiertos. */
+  function openBrowsers(profileIds, sectionKey) {
+    const section = S.OPEN_SECTIONS[sectionKey] || S.OPEN_SECTIONS.adsmanager;
+    const all = [...new Set(profileIds || [])];
+    if (!all.length) return { ok: false, error: 'No elegiste ningún perfil.' };
+    const ids = all.slice(0, OPEN_MAX);
+    (async () => {
+      for (let i = 0; i < ids.length; i++) {
+        if (i) await sleep(S.rand(2500, 5000));
+        openOne(ids[i], section);
+      }
+    })();
+    return { ok: true, started: ids.length, section: section.label, limited: all.length > ids.length, max: OPEN_MAX };
+  }
+
   return {
+    openBrowsers,
     getSettings, setSettings, cancel, isRunning,
     refreshAccounts, refreshMetrics, refreshBusinesses,
     prepareAssign, executeAssign,

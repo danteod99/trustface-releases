@@ -34,6 +34,13 @@ export default function AdsManager({ tier, onUpgrade }) {
   const [messages, setMessages] = useState([]);
   const [confirm, setConfirm] = useState(null); // { token, summary }
   const [settings, setSettings] = useState({ concurrency: 1 });
+  const [selected, setSelected] = useState([]); // perfiles marcados en la pestaña Cuentas
+  const [openSection, setOpenSection] = useState('adsmanager');
+  const [sections, setSections] = useState([
+    { key: 'adsmanager', label: 'Ads Manager' }, { key: 'bm', label: 'Business Manager' },
+    { key: 'bmsettings', label: 'Configuración del Business Manager' }, { key: 'billing', label: 'Facturación y pagos' },
+    { key: 'home', label: 'Facebook (inicio)' },
+  ]);
   const isPro = tier === 'pro';
 
   const say = (msg, type = 'info') => setMessages((p) => [...p.slice(-30), { msg, type, time: new Date().toLocaleTimeString() }]);
@@ -56,8 +63,18 @@ export default function AdsManager({ tier, onUpgrade }) {
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => { if (isPro) window.api.adsGetSettings().then((s) => { if (s && !s.error) setSettings(s); }); }, [isPro]);
   useEffect(() => {
+    if (isPro && window.api.adsOpenSections) window.api.adsOpenSections().then((s) => { if (Array.isArray(s) && s.length) setSections(s); });
+  }, [isPro]);
+  useEffect(() => {
     if (!window.api.onAdsEvent) return undefined;
     return window.api.onAdsEvent((ev) => {
+      if (ev.type === 'open-browser') {
+        const n = profileName(ev.profileId);
+        if (ev.status === 'launching') say(`${n}: abriendo navegador...`);
+        else if (ev.status === 'opened') say(`${n}: ${ev.section} abierto en una pestaña nueva`, 'success');
+        else if (ev.status === 'no-session' || ev.status === 'error') say(`${n}: ${ev.error}`, ev.status === 'error' ? 'error' : 'warn');
+        return;
+      }
       if (ev.type === 'profile-start') setProgress({ ...ev, text: `Leyendo ${profileName(ev.profileId)} (${ev.done + 1}/${ev.total})...` });
       if (ev.type === 'profile-done') {
         const r = ev.result || {};
@@ -82,6 +99,16 @@ export default function AdsManager({ tier, onUpgrade }) {
     setBusy(null); setProgress(null); reload();
   };
 
+  const toggleSel = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  const allSelected = profiles.length > 0 && selected.length === profiles.length;
+  const openBrowsers = async (ids) => {
+    if (!ids.length) return;
+    const label = sections.find((s) => s.key === openSection)?.label || 'Ads Manager';
+    const res = await window.api.adsOpenBrowser(ids, openSection);
+    if (res?.error) say(res.error === 'PRO_REQUIRED' ? 'Esta función requiere el plan Pro.' : res.error, 'error');
+    else if (res?.ok) say(`Abriendo ${res.started} navegador(es) en ${label}${res.limited ? ` (máximo ${res.max} a la vez; el resto no se abrió)` : ''}...`);
+    else if (res?.error === undefined && res?.ok === false) say(res.error || 'No se pudo abrir.', 'error');
+  };
   const refreshAccounts = (ids) => run('accounts', () => window.api.adsRefreshAccounts(ids), 'Actualizando cuentas de anuncios');
   const refreshMetrics = (ids) => run('metrics', () => window.api.adsRefreshMetrics(ids, [range]), `Leyendo métricas (${RANGES.find((r) => r[0] === range)[1]})`);
   const refreshBm = (ids) => run('bm', () => window.api.adsRefreshBusinesses(ids), 'Leyendo Business Manager');
@@ -161,16 +188,35 @@ export default function AdsManager({ tier, onUpgrade }) {
 
       {tab === 'accounts' && (
         <div>
-          <div className="flex gap-2 mb-3">
-            <button className={BTN_PRIMARY} disabled={!!busy || !profiles.length} onClick={() => refreshAccounts(null)}>Actualizar todos</button>
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <label className="flex items-center gap-1.5 text-xs text-trust-muted cursor-pointer">
+              <input type="checkbox" checked={allSelected} disabled={!profiles.length} onChange={() => setSelected(allSelected ? [] : profiles.map((p) => p.id))} />
+              Seleccionar todos
+            </label>
+            <button className={BTN_PRIMARY} disabled={!!busy || !profiles.length} onClick={() => refreshAccounts(selected.length ? selected : null)}>
+              {selected.length ? `Actualizar seleccionados (${selected.length})` : 'Actualizar todos'}
+            </button>
+            <span className="text-xs text-trust-muted ml-2">Abrir navegador en:</span>
+            <select className="text-xs bg-trust-surface border border-trust-border rounded-lg px-2 py-1.5 text-trust-dark" value={openSection} onChange={(e) => setOpenSection(e.target.value)}>
+              {sections.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+            </select>
+            <button className={BTN_SOFT} disabled={!selected.length} onClick={() => openBrowsers(selected)} title="Abre los perfiles marcados a la vez (máx. 10), sin leer datos">
+              Abrir seleccionados{selected.length ? ` (${selected.length})` : ''}
+            </button>
             <button className={BTN_SOFT} onClick={() => exportCsv('accounts')}>Exportar CSV</button>
           </div>
           {profiles.length === 0 && <div className={`${CARD} p-8 text-center text-trust-muted text-sm`}>Sin perfiles. Crea uno en Perfiles.</div>}
           {profiles.map((p) => (
             <div key={p.id} className={`${CARD} mb-3 overflow-hidden`}>
               <div className="flex items-center justify-between px-4 py-2.5 bg-trust-surface border-b border-trust-border">
-                <div className="text-sm font-medium text-trust-dark">{p.name} <span className="text-[10px] text-trust-muted">{p.fb_user}</span></div>
-                <button className={BTN_SOFT} disabled={!!busy} onClick={() => refreshAccounts([p.id])}>Actualizar</button>
+                <label className="flex items-center gap-2 text-sm font-medium text-trust-dark cursor-pointer">
+                  <input type="checkbox" checked={selected.includes(p.id)} onChange={() => toggleSel(p.id)} />
+                  <span>{p.name} <span className="text-[10px] text-trust-muted">{p.fb_user}</span></span>
+                </label>
+                <div className="flex gap-2">
+                  <button className={BTN_SOFT} onClick={() => openBrowsers([p.id])} title="Solo abre el navegador de este perfil en la sección elegida arriba, sin leer datos">Abrir navegador</button>
+                  <button className={BTN_SOFT} disabled={!!busy} onClick={() => refreshAccounts([p.id])}>Actualizar</button>
+                </div>
               </div>
               {(accountsByProfile[p.id] || []).length === 0 ? (
                 <div className="px-4 py-3 text-xs text-trust-muted">Sin cuentas leídas todavía.</div>

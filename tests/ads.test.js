@@ -243,3 +243,39 @@ test('servicio: BM guardado y confirmación obligatoria de un solo uso', async (
   assert.equal(log.length, 1); assert.equal(log[0].action_type, 'ads-assign-page-failed'); assert.equal(log[0].count, 0);
   assert.equal((await svc.executeAssign(prep.token)).code, 'NO_CONFIRMATION'); // token de un solo uso
 });
+
+test('abrir navegadores: varios perfiles, sección elegida, no cierra ni lee, máx. 10', async () => {
+  const db = new DatabaseSync(':memory:');
+  migrateAdsSchema(db);
+  const active = new Map(); const events = []; const opened = []; const closed = [];
+  const mkCtx = (id) => ({
+    cookies: async () => [{ name: 'c_user' }],
+    newPage: async () => ({ goto: async (url) => { opened.push([id, url]); }, bringToFront: async () => {} }),
+  });
+  const svc = createAdsService({
+    getDb: () => db, getActiveBrowsers: () => active,
+    launchBrowser: async (p) => { active.set(p.id, { context: mkCtx(p.id) }); },
+    closeBrowser: async (id) => { closed.push(id); },
+    loadProfile: (id) => (id === 'nope' ? null : { id, name: id }),
+    notify: (e) => events.push(e), sleep: async () => {},
+  });
+  assert.equal(svc.openBrowsers([], 'billing').ok, false); // sin perfiles
+  const ids = Array.from({ length: 12 }, (_, i) => `p${i}`);
+  const r = svc.openBrowsers(ids, 'billing');
+  assert.equal(r.ok, true); assert.equal(r.started, 10); assert.equal(r.limited, true);
+  for (let i = 0; i < 50 && opened.length < 10; i++) await new Promise((res) => setImmediate(res));
+  assert.equal(opened.length, 10);
+  assert.ok(opened.every(([, url]) => url.includes('billing_hub')), 'abre la sección pedida');
+  assert.deepEqual(closed, [], 'no cierra los navegadores');
+  assert.equal(events.filter((e) => e.status === 'opened').length, 10);
+  // sección desconocida cae a Ads Manager; perfil inexistente no rompe
+  const before = opened.length;
+  svc.openBrowsers(['nope', 'p99'], 'inventada');
+  for (let i = 0; i < 50 && opened.length < before + 1; i++) await new Promise((res) => setImmediate(res));
+  assert.ok(opened.slice(before).every(([, url]) => url.includes('adsmanager')));
+  assert.ok(events.some((e) => e.profileId === 'nope' && e.status === 'error'));
+  // perfil ya abierto: reutiliza el navegador, solo abre pestaña
+  const n = opened.length; svc.openBrowsers(['p0'], 'home');
+  for (let i = 0; i < 50 && opened.length < n + 1; i++) await new Promise((res) => setImmediate(res));
+  assert.equal(opened[opened.length - 1][1], 'https://www.facebook.com/');
+});
